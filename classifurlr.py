@@ -1,4 +1,4 @@
-import random, json, sys, argparse
+import random, json, sys, argparse, itertools
 from haralyzer import HarParser, HarPage
 from pprint import pprint
 # {
@@ -71,8 +71,9 @@ class ClassifyPipeline(Classifier):
         Classifier.__init__(self)
         self.name = 'Classification Pipeline'
         self.desc = 'Classifies by passing data through multiple classifiers and weights their results'
-        self.classifiers = [classifier for classifier, weight in classifiers]
-        self.weights = self.normalize_weights(classifiers)
+        self.classifiers = [classifier for classifier, _ in classifiers]
+        self.weights = { classifier: weight for classifier, weight in classifiers }
+        self.total_weight = sum(self.weights.values())
 
     def classify(self, sessions):
         self.classifications = []
@@ -80,38 +81,47 @@ class ClassifyPipeline(Classifier):
             self.classifications.append(classifier.classify(sessions))
         return self.tally_vote(self.classifications)
 
-    def max_confidence(self, classifications):
-        return max([c.confidence for c in classifications])
+    def tally_confidence_for_direction(self, ications):
+        #TODO Learn math so this can be correct.
+        equal_to_first = map(lambda c: c.direction == ications[0].direction, ications)
+        if not all(equal_to_first):
+            raise ValueError('All directions must be equal')
+        ications.sort(key=lambda c: c.confidence, reverse=True)
+        confidence = 0.0
+        iers = [ication.classifier for ication in ications]
+        max_weight = max([w for c, w in self.weights.items() if c in iers])
+        for c in ications:
+            weight = self.weights[c.classifier] / max_weight
+            confidence += (1 - confidence) * c.confidence * weight
+        return confidence
 
-    def tally_vote(self, classifications):
-        votes = { Classification.UP: [], Classification.DOWN: [] }
-        for c in classifications:
-            votes[c.direction].append(c)
-        # If all votes are in a single direction
-        if len(votes[Classification.UP]) == 0:
-            return Classification(self, Classification.DOWN,
-                    self.max_confidence(votes[Classification.DOWN]))
-        elif len(votes[Classification.DOWN]) == 0:
-            return Classification(self, Classification.UP,
-                    self.max_confidence(votes[Classification.UP]))
+    def tally_vote(self, ications):
+        #TODO Learn math so this can be correct.
+        dir_key = lambda c: c.direction
+        ications.sort(key=dir_key)
+        ication_groups = itertools.groupby(ications, key=dir_key)
+        dir_conf = { Classification.UP: 0.0, Classification.DOWN: 0.0 }
+        dir_weight = { Classification.UP: 0.0, Classification.DOWN: 0.0 }
+        for direction, dir_ications in ication_groups:
+            dir_ications = list(dir_ications)
+            dir_conf[direction] = self.tally_confidence_for_direction(dir_ications)
+            for ication in dir_ications:
+                dir_weight[direction] += self.weights[ication.classifier]
+        up_conf = dir_conf[Classification.UP] * (dir_weight[Classification.UP] / self.total_weight)
+        down_conf = dir_conf[Classification.DOWN] * (dir_weight[Classification.DOWN] / self.total_weight)
+
+        if up_conf == down_conf:
+            return Classification(self, self.break_tie(), 0.0)
+
+        total_conf = up_conf - down_conf
+        if total_conf < 0:
+            direction = Classification.DOWN
+            output_conf = -1 * total_conf
         else:
-            # If votes are split, it's a weighted sum.
-            tally = { Classification.UP: 0.0, Classification.DOWN: 0.0 }
-            for c in classifications:
-                tally[c.direction] = c.confidence * self.weights[c.classifier]
+            direction = Classification.UP
+            output_conf = total_conf
+        return Classification(self, direction, output_conf)
 
-            if tally[Classification.UP] == tally[Classification.DOWN]:
-                direction = self.break_tie()
-            elif tally[Classification.UP] > tally[Classification.DOWN]:
-                direction = Classification.UP
-            else:
-                direction = Classification.DOWN
-
-            return Classification(self, direction, tally[direction])
-
-    #TODO I don't think we can normalize until we get confidences. If there are
-    # two classifiers and one has zero confidence, we shouldn't cut the other in
-    # half.
     def normalize_weights(self, classifiers):
         normed = normalize([w for _, w in classifiers])
         weights = {}
