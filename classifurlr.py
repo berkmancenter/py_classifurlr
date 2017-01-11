@@ -1,31 +1,8 @@
-# Originally, this was supposed to classify a set of pages as up or down, with
-# a confidence estimation for each. I decided that there were too much open to
-# interpretation in that design, and that our use cases weren't necessarily
-# trying to determine if something was up, so it is now an inaccessibility
-# detector. You give it a set of pages, it gives you the probability that the
-# set of pages is down.
-#
-# To reiterate, THIS SCRIPT WILL ONLY EVER RETURN A DOWN STATUS.
-
 import random, json, sys, argparse, itertools, base64, difflib, logging
 import tldextract
 from haralyzer import HarParser, HarPage
 from bs4 import BeautifulSoup
 from similarityMetrics import similarity_metrics
-
-# {
-#   url: 'http://example.com',
-#   baseline: false, // 'page_1',
-#   pageDetail: {
-#       'page_0': {
-#           asn: 0,
-#           screenshot: 'data:image/png;base64,',
-#           errors: [''],
-#       },
-#       ...
-#   },
-#   har: {...}
-# }
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Determine whether a collection of pages is inaccessible')
