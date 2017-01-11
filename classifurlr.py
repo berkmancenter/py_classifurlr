@@ -69,6 +69,7 @@ class Classifier:
     def __init__(self):
         self.name = '__placeholder__'
         self.desc = '__placeholder__'
+        self.debug = True
 
     def slug(self):
         return self.name.lower().replace(' ', '_')
@@ -154,7 +155,7 @@ class ClassifyPipeline(Classifier):
 class StatusCodeClassifier(Classifier):
     def __init__(self):
         Classifier.__init__(self)
-        self.name = 'Status code classifier'
+        self.name = 'Status code'
         self.desc = 'A simple classifier that says all non-2xx status codes are down'
 
     def is_page_down(self, page):
@@ -163,17 +164,25 @@ class StatusCodeClassifier(Classifier):
             raise NotEnoughDataError('"response" or "status" not found in entry '
                     'for URL "{}"'.format(entry['rekwest']['url']))
         status = page.actual_page['response']['status']
+        if self.debug:
+            print("{} - Page: {} - Status: {}".format(self.slug(), page.page_id,
+                status))
         return status < 200 or status > 299
 
 class ErrorClassifier(Classifier):
     def __init__(self):
         Classifier.__init__(self)
-        self.name = 'Error classifier'
+        self.name = 'Error'
         self.desc = 'Classifies all sessions that contain errors as down'
 
     def is_page_down(self, page):
-        return (page.page_id in self.sessions['pageDetail'] and
-                    len(self.sessions['pageDetail'][page.page_id]['errors']) > 0)
+        if page.page_id not in self.sessions['pageDetail']:
+            raise NotEnoughDataError('No page details for page "{}"'.format(page.page_id))
+        errors = self.sessions['pageDetail'][page.page_id]['errors']
+        if self.debug:
+            print("{} - Page: {} - Errors: {}".format(self.slug(), page.page_id,
+                errors))
+        return len(errors) > 0
 
     def classify(self, sessions):
         self.sessions = sessions
@@ -182,7 +191,7 @@ class ErrorClassifier(Classifier):
 class ThrottleClassifier(Classifier):
     def __init__(self):
         Classifier.__init__(self)
-        self.name = 'Throttle classifier'
+        self.name = 'Throttle'
         self.desc = 'Detects excessively long load times that might indicate throttling'
         self.threshold = 1 # byte per millisecond
 
@@ -190,6 +199,9 @@ class ThrottleClassifier(Classifier):
         bites = page.get_total_size(page.entries)
         mss = page.get_load_time(async=False)
         bytes_per_ms = bites/mss
+        if self.debug:
+            print("{} - Page: {} - Bytes: {} - Time (ms): {} - B/ms: {}".format(
+                self.slug(), page.page_id, bites, mss, bytes_per_ms))
         return bytes_per_ms <= self.threshold
 
 class ClassifierWithBaseline(Classifier):
@@ -208,11 +220,11 @@ class ClassifierWithBaseline(Classifier):
         self.set_baseline(sessions)
         return super().classify(sessions)
 
-class BlockPageClassifier(ClassifierWithBaseline):
+class CosineSimilarityClassifier(ClassifierWithBaseline):
     def __init__(self):
         Classifier.__init__(self)
-        self.name = 'Block page classifier'
-        self.desc = 'Detects whether a page is a block page given a baseline'
+        self.name = 'Cosine similarity'
+        self.desc = 'Uses cosine similarity between a page and a baseline to determine whether a page is a block page'
         self.page_length_threshold = 0.3019
         self.cosine_sim_threshold = 0.816
         self.dom_sim_threshold = 0.995
@@ -231,12 +243,15 @@ class BlockPageClassifier(ClassifierWithBaseline):
             raise NotEnoughDataError('Could not locate page '
                     'content for URL "{}"'.format(page.url)) from e
         metrics = similarity_metrics(baseline_content, this_content)
-        return metrics['length ratio'] <= self.page_length_threshold
+        if self.debug:
+            print("{} - Page: {} - Metric: {}".format(self.slug(), page.page_id,
+                round(metrics['cosine similarity'], 3)))
+        return metrics['cosine similarity'] <= self.page_length_threshold
 
 class PageLengthClassifier(ClassifierWithBaseline):
     def __init__(self):
         Classifier.__init__(self)
-        self.name = 'Page length classifier'
+        self.name = 'Page length'
         self.desc = 'Detects whether a page is a block page by page length given a baseline'
         self.page_length_threshold = 0.3019
 
@@ -253,6 +268,10 @@ class PageLengthClassifier(ClassifierWithBaseline):
         baseline_len = self.response_len(self.baseline.actual_page)
         this_content_len = self.response_len(page.actual_page)
         length_ratio = abs(baseline_len - this_content_len) / max(baseline_len, this_content_len)
+        if self.debug:
+            print("{} - Page: {} - Baseline: {} - Content: {} - Diff Ratio: {}".format(
+                self.slug(), page.page_id, baseline_len, this_content_len,
+                round(length_ratio, 3)))
         return length_ratio >= self.page_length_threshold
 
 def run(sessions):
@@ -261,7 +280,7 @@ def run(sessions):
             (ErrorClassifier(), 1.0),
             (PageLengthClassifier(), 1.0),
             (ThrottleClassifier(), 1.0),
-            (BlockPageClassifier(), 1.0),
+            (CosineSimilarityClassifier(), 1.0),
             ]
     classifier = ClassifyPipeline(pipeline)
     classification = classifier.classify(sessions)
