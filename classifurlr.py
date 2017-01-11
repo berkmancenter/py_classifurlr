@@ -1,13 +1,26 @@
-import random, json, sys, argparse, itertools
+# Originally, this was supposed to classify a set of pages as up or down, with
+# a confidence estimation for each. I decided that there were too much open to
+# interpretation in that design, and that our use cases weren't necessarily
+# trying to determine if something was up, so it is now an inaccessibility
+# detector. You give it a set of pages, it gives you the probability that the
+# set of pages is down.
+#
+# To reiterate, THIS SCRIPT WILL ONLY EVER RETURN A DOWN STATUS.
+
+import random, json, sys, argparse, itertools, base64
 from haralyzer import HarParser, HarPage
+from bs4 import BeautifulSoup
+from similarityMetrics import similarity_metrics
 from pprint import pprint
+
 # {
 #   url: 'http://example.com',
+#   baseline: false, // 'page_1',
 #   pageDetail: {
 #       'page_0': {
 #           asn: 0,
 #           screenshot: 'data:image/png;base64,',
-#           errors: ['']
+#           errors: [''],
 #       },
 #       ...
 #   },
@@ -15,7 +28,7 @@ from pprint import pprint
 # }
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Classify a collection of pages as accessible or inaccessible with a certain confidence based on some number of factors')
+    parser = argparse.ArgumentParser(description='Determine whether a collection of pages is inaccessible')
     parser.add_argument('sessions_file', type=open,
             help='file containing JSON detailing a number of HTTP sessions')
     return parser.parse_args()
@@ -25,8 +38,20 @@ def normalize(weights):
     total = sum(weights)
     return [weight / total for weight in weights]
 
+class NotEnoughDataError(LookupError):
+    pass
+
+def har_entry_response_content(entry):
+    content = entry['response']['content']
+    if 'text' not in content:
+        raise KeyError('"text" field not found in entry content')
+    text = content['text']
+    if 'encoding' in content and content['encoding'] == 'base64':
+        text = base64.b64decode(text)
+    # BeautifulSoup takes care of the document encoding for us.
+    return str(BeautifulSoup(text, 'html.parser'))
+
 class Classification:
-    UP = 'up'
     DOWN = 'down'
     def __init__(self, classifier, direction=None, confidence=None):
         self.classifier = classifier
@@ -51,20 +76,43 @@ class Classifier:
     def classify(self, sessions):
         raise NotImplementedError('Classifier must implement classify')
 
-    def relevant_har_pages(self, url, pages):
+    def is_page_down(self, page):
+        raise NotImplementedError('Classifier may implement is_page_down')
+
+    def percent_down_pages(self, sessions):
+        down_count = 0.0
+        total_count = 0.0
+        for page in self.relevant_pages(sessions):
+            try:
+                total_count += 1
+                if self.is_page_down(page):
+                    down_count += 1
+            except NotEnoughDataError as e:
+                # Don't include pages if the classifier doesn't know anything.
+                print(e, file=sys.stderr)
+                continue
+
+        percent_down = 0.0
+        if total_count > 0:
+            percent_down = down_count / total_count
+        return percent_down
+
+    def relevant_pages(self, sessions):
+        har_parser = HarParser(sessions['har'])
         relevant_pages = []
-        for page in pages:
+        for page in har_parser.pages:
             # page.url is the initial requested url
-            if not page.url.startswith(url):
-                print('Irrelevant page when looking for "{}": {}'.format(url, page.url), file=sys.stderr)
+            if not page.url.startswith(sessions['url']):
+                print('Irrelevant page when looking for "{}": {}'.format(sessions['url'], page.url), file=sys.stderr)
+                continue
+            if 'baseline' in sessions and sessions['baseline'] == page.page_id:
                 continue
             relevant_pages.append(page)
         return relevant_pages
 
-    def break_tie(self):
-        #TODO Should this tie be randomly broken, or broken toward down?
-        return random.choice([Classification.UP, Classification.DOWN])
-
+    def classify(self, sessions):
+        confidence = self.percent_down_pages(sessions)
+        return Classification(self, Classification.DOWN, confidence)
 
 class ClassifyPipeline(Classifier):
     def __init__(self, classifiers):
@@ -72,55 +120,29 @@ class ClassifyPipeline(Classifier):
         self.name = 'Classification Pipeline'
         self.desc = 'Classifies by passing data through multiple classifiers and weights their results'
         self.classifiers = [classifier for classifier, _ in classifiers]
-        self.weights = { classifier: weight for classifier, weight in classifiers }
-        self.total_weight = sum(self.weights.values())
+        self.weights = self.normalize_weights(classifiers)
 
     def classify(self, sessions):
         self.classifications = []
         for classifier in self.classifiers:
-            self.classifications.append(classifier.classify(sessions))
+            try:
+                self.classifications.append(classifier.classify(sessions))
+            except NotEnoughDataError as e:
+                print('Not enough data for {}'.format(classifier.slug()), file=sys.stderr)
+                print(e, file=sys.stderr)
+                continue
         return self.tally_vote(self.classifications)
 
-    def tally_confidence_for_direction(self, ications):
-        #TODO Learn math so this can be correct.
-        equal_to_first = map(lambda c: c.direction == ications[0].direction, ications)
-        if not all(equal_to_first):
-            raise ValueError('All directions must be equal')
+    def tally_vote(self, ications):
+        #TODO Learn math so I can make this correct.
         ications.sort(key=lambda c: c.confidence, reverse=True)
         confidence = 0.0
         iers = [ication.classifier for ication in ications]
         max_weight = max([w for c, w in self.weights.items() if c in iers])
-        for c in ications:
-            weight = self.weights[c.classifier] / max_weight
-            confidence += (1 - confidence) * c.confidence * weight
-        return confidence
-
-    def tally_vote(self, ications):
-        #TODO Learn math so this can be correct.
-        dir_key = lambda c: c.direction
-        ications.sort(key=dir_key)
-        ication_groups = itertools.groupby(ications, key=dir_key)
-        dir_conf = { Classification.UP: 0.0, Classification.DOWN: 0.0 }
-        dir_weight = { Classification.UP: 0.0, Classification.DOWN: 0.0 }
-        for direction, dir_ications in ication_groups:
-            dir_ications = list(dir_ications)
-            dir_conf[direction] = self.tally_confidence_for_direction(dir_ications)
-            for ication in dir_ications:
-                dir_weight[direction] += self.weights[ication.classifier]
-        up_conf = dir_conf[Classification.UP] * (dir_weight[Classification.UP] / self.total_weight)
-        down_conf = dir_conf[Classification.DOWN] * (dir_weight[Classification.DOWN] / self.total_weight)
-
-        if up_conf == down_conf:
-            return Classification(self, self.break_tie(), 0.0)
-
-        total_conf = up_conf - down_conf
-        if total_conf < 0:
-            direction = Classification.DOWN
-            output_conf = -1 * total_conf
-        else:
-            direction = Classification.UP
-            output_conf = total_conf
-        return Classification(self, direction, output_conf)
+        for ication in ications:
+            weight = self.weights[ication.classifier] / max_weight
+            confidence += (1 - confidence) * ication.confidence * weight
+        return Classification(self, Classification.DOWN, confidence)
 
     def normalize_weights(self, classifiers):
         normed = normalize([w for _, w in classifiers])
@@ -130,74 +152,116 @@ class ClassifyPipeline(Classifier):
         return weights
 
 class StatusCodeClassifier(Classifier):
-
-    #TODO Do a manual review of pages with 200 codes to come up with a more
-    # accurate estimation of confidence.
-    BASE_CONFIDENCE = 0.95
-
     def __init__(self):
         Classifier.__init__(self)
         self.name = 'Status code classifier'
-        self.desc = 'A simple classifier that says all 2xx status codes are up with high confidence'
+        self.desc = 'A simple classifier that says all non-2xx status codes are down'
 
-    def classify(self, sessions):
-        har_parser = HarParser(sessions['har'])
-        page_states = { Classification.UP: 0, Classification.DOWN: 0 }
-        for page in self.relevant_har_pages(sessions['url'], har_parser.pages):
-            status = page.actual_page['response']['status']
-            if status >= 200 and status <= 299:
-                page_states[Classification.UP] += 1
-            else:
-                page_states[Classification.DOWN] += 1
-
-        # Are there more up pages or down pages?
-        if page_states[Classification.UP] == page_states[Classification.DOWN]:
-            direction = self.break_tie()
-        elif page_states[Classification.UP] > page_states[Classification.DOWN]:
-            direction = Classification.UP
-        else:
-            direction = Classification.DOWN
-
-        victory_percent = page_states[direction] / sum(page_states.values())
-        confidence = self.BASE_CONFIDENCE * victory_percent
-        return Classification(self, direction, confidence)
-
+    def is_page_down(self, page):
+        entry = page.actual_page
+        if 'response' not in entry or 'status' not in entry['response']:
+            raise NotEnoughDataError('"response" or "status" not found in entry '
+                    'for URL "{}"'.format(entry['rekwest']['url']))
+        status = page.actual_page['response']['status']
+        return status < 200 or status > 299
 
 class ErrorClassifier(Classifier):
-
-    #TODO Do a manual review of pages with errors to come up with a more
-    # accurate estimation of confidence.
-    BASE_CONFIDENCE = 0.95
-
     def __init__(self):
         Classifier.__init__(self)
         self.name = 'Error classifier'
         self.desc = 'Classifies all sessions that contain errors as down'
 
-    def classify(self, sessions):
-        # UP here means without errors, while DOWN means with errors
-        scores = { Classification.UP: 0, Classification.DOWN: 0 }
-        har_parser = HarParser(sessions['har'])
-        for page in self.relevant_har_pages(sessions['url'], har_parser.pages):
-            # If the page has errors, score one for team DOWN
-            if (page.page_id in sessions['pageDetail'] and
-                    len(sessions['pageDetail'][page.page_id]['errors']) > 0):
-                scores[Classification.DOWN] += 1
-            else:
-                scores[Classification.UP] += 1
+    def is_page_down(self, page):
+        return (page.page_id in self.sessions['pageDetail'] and
+                    len(self.sessions['pageDetail'][page.page_id]['errors']) > 0)
 
-        # Are there any pages with errors?
-        if scores[Classification.DOWN] > 0:
-            victory_percent = scores[Classification.DOWN] / sum(scores.values())
-            confidence = self.BASE_CONFIDENCE * victory_percent
-            return Classification(self, Classification.DOWN, confidence)
-        else:
-            return Classification(self, Classification.DOWN, 0.0)
+    def classify(self, sessions):
+        self.sessions = sessions
+        return super().classify(sessions)
+
+class ThrottleClassifier(Classifier):
+    def __init__(self):
+        Classifier.__init__(self)
+        self.name = 'Throttle classifier'
+        self.desc = 'Detects excessively long load times that might indicate throttling'
+        self.threshold = 1 # byte per millisecond
+
+    def is_page_down(self, page):
+        bites = page.get_total_size(page.entries)
+        mss = page.get_load_time(async=False)
+        bytes_per_ms = bites/mss
+        return bytes_per_ms <= self.threshold
+
+class ClassifierWithBaseline(Classifier):
+    def set_baseline(self, sessions):
+        if hasattr(self, 'baseline'):
+            return self.baseline
+        try:
+            baseline = sessions['baseline']
+        except KeyError as e:
+            raise NotEnoughDataError('Could not locate baseline for URL '
+                    '"{}"'.format(sessions['url'])) from e
+        self.baseline = HarPage(baseline, har_data=sessions['har'])
+        return self.baseline
+
+    def classify(self, sessions):
+        self.set_baseline(sessions)
+        return super().classify(sessions)
+
+class BlockPageClassifier(ClassifierWithBaseline):
+    def __init__(self):
+        Classifier.__init__(self)
+        self.name = 'Block page classifier'
+        self.desc = 'Detects whether a page is a block page given a baseline'
+        self.page_length_threshold = 0.3019
+        self.cosine_sim_threshold = 0.816
+        self.dom_sim_threshold = 0.995
+
+    def is_page_down(self, page):
+        if not hasattr(self, 'baseline'):
+            raise AttributeError('Baseline not set')
+        try:
+            baseline_content = har_entry_response_content(self.baseline.actual_page)
+        except KeyError as e:
+            raise NotEnoughDataError('Could not locate baseline '
+                    'content for URL "{}"'.format(page.url)) from e
+        try:
+            this_content = har_entry_response_content(page.actual_page)
+        except KeyError as e:
+            raise NotEnoughDataError('Could not locate page '
+                    'content for URL "{}"'.format(page.url)) from e
+        metrics = similarity_metrics(baseline_content, this_content)
+        return metrics['length ratio'] <= self.page_length_threshold
+
+class PageLengthClassifier(ClassifierWithBaseline):
+    def __init__(self):
+        Classifier.__init__(self)
+        self.name = 'Page length classifier'
+        self.desc = 'Detects whether a page is a block page by page length given a baseline'
+        self.page_length_threshold = 0.3019
+
+    def response_len(self, entry):
+        try:
+            return entry['response']['content']['size']
+        except KeyError as e:
+            raise NotEnoughDataError('Could not determine response '
+                    'size for URL "{}"'.format(entry['request']['url'])) from e
+
+    def is_page_down(self, page):
+        if not hasattr(self, 'baseline'):
+            raise AttributeError('Baseline not set')
+        baseline_len = self.response_len(self.baseline.actual_page)
+        this_content_len = self.response_len(page.actual_page)
+        length_ratio = abs(baseline_len - this_content_len) / max(baseline_len, this_content_len)
+        return length_ratio >= self.page_length_threshold
 
 def run(sessions):
     pipeline = [
             (StatusCodeClassifier(), 1.0),
-            (ErrorClassifier(), 1.0)
+            (ErrorClassifier(), 1.0),
+            (PageLengthClassifier(), 1.0),
+            (ThrottleClassifier(), 1.0),
+            (BlockPageClassifier(), 1.0),
             ]
     classifier = ClassifyPipeline(pipeline)
     classification = classifier.classify(sessions)
