@@ -35,8 +35,8 @@ Right now, the following classifiers are implemented:
 Requirements
 ------------
 
-Python 3.x
-pip
+* Python 3.x
+* pip
 
 Getting Started
 ---------------
