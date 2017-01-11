@@ -7,11 +7,11 @@
 #
 # To reiterate, THIS SCRIPT WILL ONLY EVER RETURN A DOWN STATUS.
 
-import random, json, sys, argparse, itertools, base64
+import random, json, sys, argparse, itertools, base64, difflib, logging
+import tldextract
 from haralyzer import HarParser, HarPage
 from bs4 import BeautifulSoup
 from similarityMetrics import similarity_metrics
-from pprint import pprint
 
 # {
 #   url: 'http://example.com',
@@ -31,6 +31,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Determine whether a collection of pages is inaccessible')
     parser.add_argument('sessions_file', type=open,
             help='file containing JSON detailing a number of HTTP sessions')
+    parser.add_argument('--debug', action='store_true',
+            help='Log debugging info')
     return parser.parse_args()
 
 def normalize(weights):
@@ -53,29 +55,34 @@ def har_entry_response_content(entry):
 
 class Classification:
     DOWN = 'down'
-    def __init__(self, classifier, direction=None, confidence=None):
+    def __init__(self, classifier, direction=None, confidence=None, constituents=None):
         self.classifier = classifier
         self.direction = direction
         self.confidence = confidence
+        self.constituents = constituents
+
+    def as_dict(self):
+        d = {
+                'status': self.direction,
+                'statusConfidence': round(self.confidence, 6),
+                'classifier': self.classifier.slug()
+                }
+        if self.constituents is not None:
+            d['constituents'] = []
+            for constituent in self.constituents:
+                d['constituents'].append(constituent.as_dict())
+        return d
 
     def as_json(self):
-        return json.dumps({
-            'status': self.direction,
-            'statusConfidence': self.confidence,
-            'classifier': self.classifier.slug()
-            }, indent=2)
+        return json.dumps(self.as_dict(), indent=2)
 
 class Classifier:
     def __init__(self):
         self.name = '__placeholder__'
         self.desc = '__placeholder__'
-        self.debug = True
 
     def slug(self):
         return self.name.lower().replace(' ', '_')
-
-    def classify(self, sessions):
-        raise NotImplementedError('Classifier must implement classify')
 
     def is_page_down(self, page):
         raise NotImplementedError('Classifier may implement is_page_down')
@@ -90,7 +97,7 @@ class Classifier:
                     down_count += 1
             except NotEnoughDataError as e:
                 # Don't include pages if the classifier doesn't know anything.
-                print(e, file=sys.stderr)
+                logging.warning(e)
                 continue
 
         percent_down = 0.0
@@ -104,14 +111,16 @@ class Classifier:
         for page in har_parser.pages:
             # page.url is the initial requested url
             if not page.url.startswith(sessions['url']):
-                print('Irrelevant page when looking for "{}": {}'.format(sessions['url'], page.url), file=sys.stderr)
-                continue
+                logging.warning('Possibly irrelevant page when looking for '
+                        '"{}": {}'.format(sessions['url'], page.url))
+                #continue # Don't skip
             if 'baseline' in sessions and sessions['baseline'] == page.page_id:
                 continue
             relevant_pages.append(page)
         return relevant_pages
 
     def classify(self, sessions):
+        self.sessions = sessions
         confidence = self.percent_down_pages(sessions)
         return Classification(self, Classification.DOWN, confidence)
 
@@ -129,10 +138,11 @@ class ClassifyPipeline(Classifier):
             try:
                 self.classifications.append(classifier.classify(sessions))
             except NotEnoughDataError as e:
-                print('Not enough data for {}'.format(classifier.slug()), file=sys.stderr)
-                print(e, file=sys.stderr)
+                logging.warning('Not enough data for {} - {}'.format(classifier.slug(), e))
                 continue
-        return self.tally_vote(self.classifications)
+        classification = self.tally_vote(self.classifications)
+        classification.constituents = self.classifications
+        return classification
 
     def tally_vote(self, ications):
         #TODO Learn math so I can make this correct.
@@ -164,9 +174,8 @@ class StatusCodeClassifier(Classifier):
             raise NotEnoughDataError('"response" or "status" not found in entry '
                     'for URL "{}"'.format(entry['rekwest']['url']))
         status = page.actual_page['response']['status']
-        if self.debug:
-            print("{} - Page: {} - Status: {}".format(self.slug(), page.page_id,
-                status))
+        logging.debug("{} - Page: {} - Status: {}".format(self.slug(), page.page_id,
+            status))
         return status < 200 or status > 299
 
 class ErrorClassifier(Classifier):
@@ -179,14 +188,9 @@ class ErrorClassifier(Classifier):
         if page.page_id not in self.sessions['pageDetail']:
             raise NotEnoughDataError('No page details for page "{}"'.format(page.page_id))
         errors = self.sessions['pageDetail'][page.page_id]['errors']
-        if self.debug:
-            print("{} - Page: {} - Errors: {}".format(self.slug(), page.page_id,
-                errors))
+        logging.debug("{} - Page: {} - Errors: {}".format(self.slug(), page.page_id,
+            errors))
         return len(errors) > 0
-
-    def classify(self, sessions):
-        self.sessions = sessions
-        return super().classify(sessions)
 
 class ThrottleClassifier(Classifier):
     def __init__(self):
@@ -199,21 +203,18 @@ class ThrottleClassifier(Classifier):
         bites = page.get_total_size(page.entries)
         mss = page.get_load_time(async=False)
         bytes_per_ms = bites/mss
-        if self.debug:
-            print("{} - Page: {} - Bytes: {} - Time (ms): {} - B/ms: {}".format(
-                self.slug(), page.page_id, bites, mss, bytes_per_ms))
+        logging.debug("{} - Page: {} - Bytes: {} - Time (ms): {} - B/ms: {}".format(
+            self.slug(), page.page_id, bites, mss, round(bytes_per_ms, 3)))
         return bytes_per_ms <= self.threshold
 
 class ClassifierWithBaseline(Classifier):
     def set_baseline(self, sessions):
         if hasattr(self, 'baseline'):
             return self.baseline
-        try:
-            baseline = sessions['baseline']
-        except KeyError as e:
+        if 'baseline' not in sessions or sessions['baseline'] == False:
             raise NotEnoughDataError('Could not locate baseline for URL '
-                    '"{}"'.format(sessions['url'])) from e
-        self.baseline = HarPage(baseline, har_data=sessions['har'])
+                    '"{}"'.format(sessions['url']))
+        self.baseline = HarPage(sessions['baseline'], har_data=sessions['har'])
         return self.baseline
 
     def classify(self, sessions):
@@ -224,7 +225,8 @@ class CosineSimilarityClassifier(ClassifierWithBaseline):
     def __init__(self):
         Classifier.__init__(self)
         self.name = 'Cosine similarity'
-        self.desc = 'Uses cosine similarity between a page and a baseline to determine whether a page is a block page'
+        self.desc = ('Uses cosine similarity between a page and a baseline '
+            'to determine whether a page is a block page')
         self.page_length_threshold = 0.3019
         self.cosine_sim_threshold = 0.816
         self.dom_sim_threshold = 0.995
@@ -243,10 +245,9 @@ class CosineSimilarityClassifier(ClassifierWithBaseline):
             raise NotEnoughDataError('Could not locate page '
                     'content for URL "{}"'.format(page.url)) from e
         metrics = similarity_metrics(baseline_content, this_content)
-        if self.debug:
-            print("{} - Page: {} - Metric: {}".format(self.slug(), page.page_id,
-                round(metrics['cosine similarity'], 3)))
-        return metrics['cosine similarity'] <= self.page_length_threshold
+        logging.debug("{} - Page: {} - Metric: {}".format(self.slug(), page.page_id,
+            round(metrics['cosine similarity'], 3)))
+        return metrics['cosine similarity'] <= self.cosine_sim_threshold
 
 class PageLengthClassifier(ClassifierWithBaseline):
     def __init__(self):
@@ -268,26 +269,77 @@ class PageLengthClassifier(ClassifierWithBaseline):
         baseline_len = self.response_len(self.baseline.actual_page)
         this_content_len = self.response_len(page.actual_page)
         length_ratio = abs(baseline_len - this_content_len) / max(baseline_len, this_content_len)
-        if self.debug:
-            print("{} - Page: {} - Baseline: {} - Content: {} - Diff Ratio: {}".format(
-                self.slug(), page.page_id, baseline_len, this_content_len,
-                round(length_ratio, 3)))
+        logging.debug("{} - Page: {} - Baseline: {} - Content: {} - Diff Ratio: {}".format(
+            self.slug(), page.page_id, baseline_len, this_content_len, round(length_ratio, 3)))
         return length_ratio >= self.page_length_threshold
 
+class DifferingDomainClassifier(Classifier):
+    def __init__(self):
+        Classifier.__init__(self)
+        self.name = 'Differing domain'
+        self.desc = ('Detects whether the requested domain and the final domain '
+                'are significantly different')
+        self.pad_domain_to = 50
+
+    def get_diff_ratio(self, a, b):
+        return difflib.SequenceMatcher(None,
+                a.zfill(self.pad_domain_to), b.zfill(self.pad_domain_to)).ratio()
+
+    def extract_domain(self, url):
+        return tldextract.extract(url).registered_domain
+
+    def requested_domain(self, page):
+        return self.extract_domain(page.entries[0]['request']['url'])
+
+    def final_domain(self, page):
+        try:
+            return self.extract_domain(page.actual_page['request']['url'])
+        except KeyError as e:
+            raise NotEnoughDataError('Could not find request URL for '
+                    'URL "{}"'.format(page.url)) from e
+
+    def get_page_ratio(self, page):
+        requested = self.requested_domain(page)
+        final = self.final_domain(page)
+        ratio = self.get_diff_ratio(requested, final)
+        logging.debug('{} - Page: {} - Requested: {} - Final: {} - Ratio: {}'.format(
+            self.slug(), page.page_id, requested, final, ratio))
+        return ratio
+
+    def classify(self, sessions):
+        # This classifier does things a little differently. Instead of each
+        # page voting whether it's up or down, we take the average difference
+        # ratio between the requested and final domains.
+        self.sessions = sessions
+        ratios = [self.get_page_ratio(page) for page in self.relevant_pages(sessions)]
+        avg = sum(ratios) / len(ratios)
+        return Classification(self, Classification.DOWN, 1 - avg)
+
 def run(sessions):
-    pipeline = [
+    pipeline_config = [
             (StatusCodeClassifier(), 1.0),
             (ErrorClassifier(), 1.0),
             (PageLengthClassifier(), 1.0),
             (ThrottleClassifier(), 1.0),
             (CosineSimilarityClassifier(), 1.0),
+            (DifferingDomainClassifier(), 1.0),
             ]
-    classifier = ClassifyPipeline(pipeline)
-    classification = classifier.classify(sessions)
-    print(classification.as_json())
-    for c in classifier.classifications:
-        print(c.as_json())
+    pipeline = ClassifyPipeline(pipeline_config)
+    classification = pipeline.classify(sessions)
+    return classification
+
+def app(environ, start_response):
+    sessions_json = environ['wsgi.input'].read().decode('utf-8')
+    sessions = json.loads(sessions_json)
+    status = '201 Created'
+    headers = [('Content-Type', 'application/json')]
+    start_response(status, headers)
+    c = run(sessions)
+    return [c.as_json().encode('utf-8')]
 
 if __name__ == '__main__':
     args = parse_args()
-    run(json.load(args.sessions_file))
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    c = run(json.load(args.sessions_file))
+    print(c.as_json())

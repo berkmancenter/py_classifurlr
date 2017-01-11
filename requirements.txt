@@ -1,3 +1,4 @@
 haralyzer
 beautifulsoup4
 numpy
+tldextract
