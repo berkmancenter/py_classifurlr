@@ -1,4 +1,4 @@
-import random, json, sys, argparse, itertools, base64, difflib, logging
+import random, json, sys, argparse, itertools, base64, difflib, logging, re
 import tldextract
 from haralyzer import HarParser, HarPage
 from bs4 import BeautifulSoup
@@ -23,7 +23,7 @@ class NotEnoughDataError(LookupError):
 def har_entry_response_content(entry):
     content = entry['response']['content']
     if 'text' not in content:
-        raise KeyError('"text" field not found in entry content')
+        raise NotEnoughDataError('"text" field not found in entry content')
     text = content['text']
     if 'encoding' in content and content['encoding'] == 'base64':
         text = base64.b64decode(text)
@@ -213,12 +213,12 @@ class CosineSimilarityClassifier(ClassifierWithBaseline):
             raise AttributeError('Baseline not set')
         try:
             baseline_content = har_entry_response_content(self.baseline.actual_page)
-        except KeyError as e:
+        except NotEnoughDataError as e:
             raise NotEnoughDataError('Could not locate baseline '
                     'content for URL "{}"'.format(page.url)) from e
         try:
             this_content = har_entry_response_content(page.actual_page)
-        except KeyError as e:
+        except NotEnoughDataError as e:
             raise NotEnoughDataError('Could not locate page '
                     'content for URL "{}"'.format(page.url)) from e
         metrics = similarity_metrics(baseline_content, this_content)
@@ -249,6 +249,79 @@ class PageLengthClassifier(ClassifierWithBaseline):
         logging.debug("{} - Page: {} - Baseline: {} - Content: {} - Diff Ratio: {}".format(
             self.slug(), page.page_id, baseline_len, this_content_len, round(length_ratio, 3)))
         return length_ratio >= self.page_length_threshold
+
+class BlockpageSignatureClassifier(Classifier):
+    def __init__(self):
+        Classifier.__init__(self)
+        self.name = 'Block page signature'
+        self.desc = ('Uses text patterns found in pre-identified block pages '
+                ' to detect blocking')
+
+        # Signatures from https://github.com/TheTorProject/ooni-pipeline/blob/master/pipeline/batch/sql_tasks.py
+
+        # These are the countries for which we identify blocking by looking for certain
+        # fingerprint in the HTTP response body.
+        self.body_fingerprints = [
+                re.escape('iframe src="http://10.10'),                                           #'IR'
+                re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                #'TR'
+                re.escape('www.gamingcommission.gov.gr/index.php/forbidden-access-black-list/'), #'GR'
+                re.escape('http://eais.rkn.gov.ru/'),                                            #'RU'
+                re.escape('The page you have requested has been blocked'),                       #'IN'
+                re.escape('that is considered illegal according to Belgian legislation'),        #'BE'
+                re.escape('GdF Stop Page'),                                                      #'IT'
+                re.escape('nba.com.cy/Eas/eas.nsf/All/6F7F17A7790A55C8C2257B130055C86F'),        #'CY'
+                re.escape('lagt at blokere for adgang til siden.'),                              #'DK'
+                re.escape('xtpage = "page-blocage-terrorisme"'),                                 #'FR'
+                re.escape('http://warning.or.kr'),                                               #'KR'
+
+                # From ICLab https://github.com/iclab/iclab-dmp/blob/master/primitives/block_page_detection.py
+                "src=[\",\']http://(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\:[0-9]{2,5})?/webadmin/deny/",
+                "src=[\",\']http://(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\:[0-9]{2,5})?/blocked.html",
+                re.escape("The url has been blocked")
+                ]
+
+        # These are countries for which we detect blocking by looking for certain
+        # header values.
+        self.header_fingerprints = [
+                ('Server', 'Protected by WireFilter'),                             #'SA'
+                ('Location', re.escape('http://internet-positif.org')),            #'ID'
+                ('Location', re.escape('http://196.1.211.6:8080/alert/')),         #'SD'
+                ('Location', re.escape('http://www.vodafone.qa/alu.cfm')),         #'QA'
+                ('Location', re.escape('http://www.warning.or.kr')),               #'KR'
+                ('Location', re.escape('http://mobilegen.vodafone.pt/denied/dn')), #'PT'
+                ('Location', re.escape('http://block-no.altibox.net/')),           #'NO'
+                ('Location', re.escape('http://blocked.nb.sky.com')),              #'UK'
+                ('Location', re.escape('http://warning.rt.ru'))                    #'RU'
+                ]
+
+    def is_page_down(self, page):
+        for entry in page.entries:
+            for header in entry['response']['headers']:
+                for fprint in self.header_fingerprints:
+                    if (header['name'] == fprint[0] and
+                            re.search(fprint[1], header['value'])):
+                        logging.debug('{} - Page: {} - Header Pattern: "{}" - '
+                                'Header: "{}" - Value: "{}"'.format(self.slug(),
+                                    page.page_id, fprint[1], header['name'],
+                                    header['value']))
+                        return True
+
+            # Everything below here relates to the body, so if we can't extract
+            # a body, move on to the next entry.
+            try:
+                body = har_entry_response_content(entry)
+            except NotEnoughDataError:
+                continue
+
+            for fprint in self.body_fingerprints:
+                match = re.search(fprint, body)
+                if match is not None:
+                    logging.debug('{} - Page: {} - Body Pattern: "{}" '
+                            '- Matched: "{}"'.format(self.slug(), page.page_id,
+                                fprint, match.group(0)))
+                    return True
+
+        return False
 
 class DifferingDomainClassifier(Classifier):
     def __init__(self):
@@ -300,6 +373,7 @@ def run(sessions):
             (ThrottleClassifier(), 1.0),
             (CosineSimilarityClassifier(), 1.0),
             (DifferingDomainClassifier(), 1.0),
+            (BlockpageSignatureClassifier(), 1.0),
             ]
     pipeline = ClassifyPipeline(pipeline_config)
     classification = pipeline.classify(sessions)

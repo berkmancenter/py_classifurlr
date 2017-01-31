@@ -31,6 +31,8 @@ Right now, the following classifiers are implemented:
 * _DifferingDomainClassifier_ - detects whether the requested domain and the
  final domain are significantly different which could indicate DNS tampering
  or injected redirects.
+* _BlockpageSignatureClassifier_ - detects patterns of text we think are unique
+ to block pages. Most patterns are from [OONI](https://github.com/iclab/iclab-dmp/blob/master/primitives/block_page_detection.py).
 
 Requirements
 ------------
