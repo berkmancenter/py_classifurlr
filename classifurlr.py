@@ -76,7 +76,7 @@ class Classifier:
                     down_count += 1
             except NotEnoughDataError as e:
                 # Don't include pages if the classifier doesn't know anything.
-                logging.warning(e)
+                logging.info(e)
                 continue
 
         percent_down = 0.0
@@ -149,6 +149,8 @@ class StatusCodeClassifier(Classifier):
 
     def is_page_down(self, page):
         entry = page.actual_page
+        if entry is None:
+            raise NotEnoughDataError('No final page found')
         if 'response' not in entry or 'status' not in entry['response']:
             raise NotEnoughDataError('"response" or "status" not found in entry '
                     'for URL "{}"'.format(entry['rekwest']['url']))
@@ -344,6 +346,8 @@ class DifferingDomainClassifier(Classifier):
         return self.extract_domain(page.entries[0]['request']['url'])
 
     def final_domain(self, page):
+        if page.actual_page is None:
+            raise NotEnoughDataError('No final page found')
         try:
             return self.extract_domain(page.actual_page['request']['url'])
         except KeyError as e:
