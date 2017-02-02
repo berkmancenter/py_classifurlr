@@ -41,8 +41,9 @@ class Classification:
     def as_dict(self):
         d = {
                 'status': self.direction,
-                'statusConfidence': round(self.confidence, 6),
-                'classifier': self.classifier.slug()
+                'confidence': round(self.confidence, 6),
+                'classifier': self.classifier.slug(),
+                'version': self.classifier.version
                 }
         if self.constituents is not None:
             d['constituents'] = []
@@ -57,6 +58,7 @@ class Classifier:
     def __init__(self):
         self.name = '__placeholder__'
         self.desc = '__placeholder__'
+        self.version = '0.1'
 
     def slug(self):
         return self.name.lower().replace(' ', '_')
