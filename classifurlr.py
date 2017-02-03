@@ -28,7 +28,10 @@ def har_entry_response_content(entry):
     if 'encoding' in content and content['encoding'] == 'base64':
         text = base64.b64decode(text)
     # BeautifulSoup takes care of the document encoding for us.
-    return str(BeautifulSoup(text, 'lxml'))
+    try:
+        return str(BeautifulSoup(text, 'lxml'))
+    except Exception as e:
+        raise NotEnoughDataError('Could not parse entry content')
 
 class Classification:
     DOWN = 'down'
