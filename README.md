@@ -39,7 +39,8 @@ Requirements
 
 * Python 3.x
 * pip
-* python-lxml (optional)
+* libxml2
+* libxslt
 
 Getting Started
 ---------------
