@@ -39,6 +39,7 @@ Requirements
 
 * Python 3.x
 * pip
+* python-lxml (optional)
 
 Getting Started
 ---------------
