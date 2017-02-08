@@ -1,5 +1,6 @@
-import random, json, sys, argparse, itertools, base64, difflib, logging, re
+import random, json, sys, argparse, itertools, base64, difflib, logging, re, uuid
 import tldextract
+import concurrent.futures
 from haralyzer import HarParser, HarPage
 from bs4 import BeautifulSoup
 from similarityMetrics import similarity_metrics
@@ -62,6 +63,7 @@ class Classifier:
         self.name = '__placeholder__'
         self.desc = '__placeholder__'
         self.version = '0.1'
+        self.id = uuid.uuid4().hex
 
     def slug(self):
         return self.name.lower().replace(' ', '_')
@@ -116,12 +118,19 @@ class ClassifyPipeline(Classifier):
 
     def classify(self, sessions):
         self.classifications = []
-        for classifier in self.classifiers:
+        futures_to_classifiers = {}
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            for classifier in self.classifiers:
+                futures_to_classifiers[executor.submit(classifier.classify, sessions)] = classifier
+
+        for future in concurrent.futures.as_completed(futures_to_classifiers):
+            classifier = futures_to_classifiers[future]
             try:
-                self.classifications.append(classifier.classify(sessions))
+                self.classifications.append(future.result())
             except NotEnoughDataError as e:
                 logging.warning('Not enough data for {} - {}'.format(classifier.slug(), e))
                 continue
+
         classification = self.tally_vote(self.classifications)
         classification.constituents = self.classifications
         return classification
@@ -130,10 +139,10 @@ class ClassifyPipeline(Classifier):
         #TODO Learn math so I can make this correct.
         ications.sort(key=lambda c: c.confidence, reverse=True)
         confidence = 0.0
-        iers = [ication.classifier for ication in ications]
-        max_weight = max([w for c, w in self.weights.items() if c in iers])
+        ier_ids = [ication.classifier.id for ication in ications]
+        max_weight = max([w for cid, w in self.weights.items() if cid in ier_ids])
         for ication in ications:
-            weight = self.weights[ication.classifier] / max_weight
+            weight = self.weights[ication.classifier.id] / max_weight
             confidence += (1 - confidence) * ication.confidence * weight
         return Classification(self, Classification.DOWN, confidence)
 
@@ -141,7 +150,7 @@ class ClassifyPipeline(Classifier):
         normed = normalize([w for _, w in classifiers])
         weights = {}
         for i, classifier in enumerate(classifiers):
-            weights[classifier[0]] = normed[i]
+            weights[classifier[0].id] = normed[i]
         return weights
 
 class StatusCodeClassifier(Classifier):
