@@ -181,11 +181,12 @@ class ThrottleClassifier(Classifier):
         Classifier.__init__(self)
         self.name = 'Throttle'
         self.desc = 'Detects excessively long load times that might indicate throttling'
-        self.threshold = 1 # byte per millisecond
+        self.threshold = 1 # kilobytes per second (1000 bytes)
+        # Slowest I could find in IM dashboard data was Yemen at 87 kB/s
 
     def is_page_down(self, page):
         bites = page.get_total_size(page.entries)
-        mss = page.get_load_time(async=False)
+        mss = page.get_load_time
         bytes_per_ms = bites/mss
         logging.debug("{} - Page: {} - Bytes: {} - Time (ms): {} - B/ms: {}".format(
             self.slug(), page.page_id, bites, mss, round(bytes_per_ms, 3)))
