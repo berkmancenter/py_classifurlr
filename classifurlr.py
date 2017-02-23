@@ -144,6 +144,17 @@ class ClassifyPipeline(Classifier):
             weights[classifier[0]] = normed[i]
         return weights
 
+class EmptyPageClassifier(Classifier):
+    def __init__(self):
+        Classifier.__init__(self)
+        self.name = 'Empty page'
+        self.desc = 'A classifier that says pages with very little content are down'
+        self.size_cutoff = 300 # bytes
+
+    def is_page_down(self, page):
+        total_size = page.get_total_size(page.entries)
+        return total_size <= self.size_cutoff
+
 class StatusCodeClassifier(Classifier):
     def __init__(self):
         Classifier.__init__(self)
@@ -181,16 +192,34 @@ class ThrottleClassifier(Classifier):
         Classifier.__init__(self)
         self.name = 'Throttle'
         self.desc = 'Detects excessively long load times that might indicate throttling'
-        self.threshold = 1 # kilobytes per second (1000 bytes)
-        # Slowest I could find in IM dashboard data was Yemen at 87 kB/s
+        self.total_confidence_above_size = 600
+        self.time_threshold = 5 * 60 * 1000 # 5 minutes
+        self.bandwidth_threshold = 50 # kbps
 
-    def is_page_down(self, page):
+    def page_down_confidence(self, page):
         bites = page.get_total_size(page.entries)
-        mss = page.get_load_time
-        bytes_per_ms = bites/mss
-        logging.debug("{} - Page: {} - Bytes: {} - Time (ms): {} - B/ms: {}".format(
-            self.slug(), page.page_id, bites, mss, round(bytes_per_ms, 3)))
-        return bytes_per_ms <= self.threshold
+        kilobits = bites * 8 / 1000.0
+        mss = page.get_load_time()
+        seconds = mss / 1000.0
+        kilobits_per_sec = kilobits/seconds
+        logging.debug("{} - Page: {} - Bytes: {} - Time (ms): {} - kbps: {}".format(
+            self.slug(), page.page_id, bites, mss, round(kilobits_per_sec, 3)))
+        down = (mss >= self.time_threshold
+                and kilobits_per_sec <= self.bandwidth_threshold)
+        confidence = 0.0
+        if down:
+            # Simple linear intepolation between 0 and 100% confidence
+            confidence = min(1.0, bites / self.total_confidence_above_size)
+        return confidence
+
+    def classify(self, sessions):
+        # This classifier does things a little differently. Instead of each
+        # page voting whether it's up or down, we take the average difference
+        # ratio between the requested and final domains.
+        self.sessions = sessions
+        confidences = [self.page_down_confidence(page) for page in self.relevant_pages(sessions)]
+        avg = sum(confidences) / len(confidences)
+        return Classification(self, Classification.DOWN, avg)
 
 class ClassifierWithBaseline(Classifier):
     def set_baseline(self, sessions):
@@ -270,17 +299,18 @@ class BlockpageSignatureClassifier(Classifier):
         # These are the countries for which we identify blocking by looking for certain
         # fingerprint in the HTTP response body.
         self.body_fingerprints = [
-                re.escape('iframe src="http://10.10'),                                           #'IR'
-                re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                #'TR'
-                re.escape('www.gamingcommission.gov.gr/index.php/forbidden-access-black-list/'), #'GR'
-                re.escape('http://eais.rkn.gov.ru/'),                                            #'RU'
-                re.escape('The page you have requested has been blocked'),                       #'IN'
-                re.escape('that is considered illegal according to Belgian legislation'),        #'BE'
-                re.escape('GdF Stop Page'),                                                      #'IT'
-                re.escape('nba.com.cy/Eas/eas.nsf/All/6F7F17A7790A55C8C2257B130055C86F'),        #'CY'
-                re.escape('lagt at blokere for adgang til siden.'),                              #'DK'
-                re.escape('xtpage = "page-blocage-terrorisme"'),                                 #'FR'
-                re.escape('http://warning.or.kr'),                                               #'KR'
+                re.escape('iframe src="http://10.10'),                                           # IR
+                re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                # TR
+                re.escape('www.gamingcommission.gov.gr/index.php/forbidden-access-black-list/'), # GR
+                re.escape('http://eais.rkn.gov.ru/'),                                            # RU
+                re.escape('The page you have requested has been blocked'),                       # IN
+                re.escape('that is considered illegal according to Belgian legislation'),        # BE
+                re.escape('GdF Stop Page'),                                                      # IT
+                re.escape('nba.com.cy/Eas/eas.nsf/All/6F7F17A7790A55C8C2257B130055C86F'),        # CY
+                re.escape('lagt at blokere for adgang til siden.'),                              # DK
+                re.escape('xtpage = "page-blocage-terrorisme"'),                                 # FR
+                re.escape('http://warning.or.kr'),                                               # KR
+                re.escape('prohibited for viewership from within Pakistan'),                     # PK
 
                 # From ICLab https://github.com/iclab/iclab-dmp/blob/master/primitives/block_page_detection.py
                 "src=[\",\']http://(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\:[0-9]{2,5})?/webadmin/deny/",
@@ -291,15 +321,16 @@ class BlockpageSignatureClassifier(Classifier):
         # These are countries for which we detect blocking by looking for certain
         # header values.
         self.header_fingerprints = [
-                ('Server', 'Protected by WireFilter'),                             #'SA'
-                ('Location', re.escape('http://internet-positif.org')),            #'ID'
-                ('Location', re.escape('http://196.1.211.6:8080/alert/')),         #'SD'
-                ('Location', re.escape('http://www.vodafone.qa/alu.cfm')),         #'QA'
-                ('Location', re.escape('http://www.warning.or.kr')),               #'KR'
-                ('Location', re.escape('http://mobilegen.vodafone.pt/denied/dn')), #'PT'
-                ('Location', re.escape('http://block-no.altibox.net/')),           #'NO'
-                ('Location', re.escape('http://blocked.nb.sky.com')),              #'UK'
-                ('Location', re.escape('http://warning.rt.ru'))                    #'RU'
+                ('Server', 'Protected by WireFilter'),                             # SA
+                ('Location', re.escape('http://internet-positif.org')),            # ID
+                ('Location', re.escape('http://196.1.211.6:8080/alert/')),         # SD
+                ('Location', re.escape('http://www.vodafone.qa/alu.cfm')),         # QA
+                ('Location', re.escape('http://www.warning.or.kr')),               # KR
+                ('Location', re.escape('http://mobilegen.vodafone.pt/denied/dn')), # PT
+                ('Location', re.escape('http://block-no.altibox.net/')),           # NO
+                ('Location', re.escape('http://blocked.nb.sky.com')),              # UK
+                ('Location', re.escape('http://warning.rt.ru')),                   # RU
+                ('Via', re.escape('1.1 C1102')),                                   # UZ
                 ]
 
     def is_page_down(self, page):
@@ -338,10 +369,12 @@ class DifferingDomainClassifier(Classifier):
         self.desc = ('Detects whether the requested domain and the final domain '
                 'are significantly different')
         self.pad_domain_to = 50
+        self.multiplier = 2.5 # Ratios of very different URLs were around 0.28
 
     def get_diff_ratio(self, a, b):
-        return difflib.SequenceMatcher(None,
+        ratio = difflib.SequenceMatcher(None,
                 a.zfill(self.pad_domain_to), b.zfill(self.pad_domain_to)).ratio()
+        return min(1.0, ratio * self.multiplier)
 
     def extract_domain(self, url):
         return tldextract.extract(url).registered_domain
@@ -381,6 +414,7 @@ def run(sessions):
             (ErrorClassifier(), 1.0),
             (PageLengthClassifier(), 1.0),
             (ThrottleClassifier(), 1.0),
+            (EmptyPageClassifier(), 1.0),
             (CosineSimilarityClassifier(), 1.0),
             (DifferingDomainClassifier(), 1.0),
             (BlockpageSignatureClassifier(), 1.0),
