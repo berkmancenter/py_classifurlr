@@ -2,3 +2,4 @@ haralyzer
 beautifulsoup4
 numpy
 tldextract
+lxml

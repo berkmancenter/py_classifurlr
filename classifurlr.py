@@ -372,9 +372,10 @@ class DifferingDomainClassifier(Classifier):
         self.multiplier = 2.5 # Ratios of very different URLs were around 0.28
 
     def get_diff_ratio(self, a, b):
+        # return 1 if they are very different, 0 if identical
         ratio = difflib.SequenceMatcher(None,
                 a.zfill(self.pad_domain_to), b.zfill(self.pad_domain_to)).ratio()
-        return min(1.0, ratio * self.multiplier)
+        return min(1.0, (1 - ratio) * self.multiplier)
 
     def extract_domain(self, url):
         return tldextract.extract(url).registered_domain
@@ -396,7 +397,7 @@ class DifferingDomainClassifier(Classifier):
         final = self.final_domain(page)
         ratio = self.get_diff_ratio(requested, final)
         logging.debug('{} - Page: {} - Requested: {} - Final: {} - Ratio: {}'.format(
-            self.slug(), page.page_id, requested, final, ratio))
+            self.slug(), page.page_id, requested, final, round(ratio, 6)))
         return ratio
 
     def classify(self, sessions):
@@ -406,7 +407,7 @@ class DifferingDomainClassifier(Classifier):
         self.sessions = sessions
         ratios = [self.get_page_ratio(page) for page in self.relevant_pages(sessions)]
         avg = sum(ratios) / len(ratios)
-        return Classification(self, Classification.DOWN, 1 - avg)
+        return Classification(self, Classification.DOWN, avg)
 
 def run(sessions):
     pipeline_config = [
