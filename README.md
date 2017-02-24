@@ -16,23 +16,25 @@ verdict.
 
 Right now, the following classifiers are implemented:
 
+* _BlockpageSignatureClassifier_ - detects patterns of text we think are unique
+ to block pages. Most patterns are from [OONI](https://github.com/iclab/iclab-dmp/blob/master/primitives/block_page_detection.py).
 * _ClassifyPipeline_ - a classifier that pools the results of other classifiers
-* _StatusCodeClassifier_ - a simple classifier that says all non-2xx status codes are down
-* _ErrorClassifier_ - classifies all sessions that contain errors as down
-* _ThrottleClassifier_ - detects excessively long load times that might
- indicate throttling
 * _CosineSimilarityClassifier_ - uses cosine similarity between a page and
  a baseline to determine whether a page is unexpected content (like a block
  page). Relevant paper [here](http://conferences.sigcomm.org/imc/2014/papers/p299.pdf)
+* _DifferingDomainClassifier_ - detects whether the requested domain and the
+ final domain are significantly different which could indicate DNS tampering
+ or injected redirects.
+* _ErrorClassifier_ - classifies all sessions that contain errors as down
+* _EmptyPageClassifier_ - classifies all pages that have very little content as
+  down
 * _PageLengthClassifier_ - detects whether a page contains unexpected content
  (like a block page) by looking at the different lengths of a given page and
  a baseline. Relevant paper
  [here](http://conferences.sigcomm.org/imc/2014/papers/p299.pdf)
-* _DifferingDomainClassifier_ - detects whether the requested domain and the
- final domain are significantly different which could indicate DNS tampering
- or injected redirects.
-* _BlockpageSignatureClassifier_ - detects patterns of text we think are unique
- to block pages. Most patterns are from [OONI](https://github.com/iclab/iclab-dmp/blob/master/primitives/block_page_detection.py).
+* _StatusCodeClassifier_ - a simple classifier that says all non-2xx status codes are down
+* _ThrottleClassifier_ - detects excessively long load times that might
+ indicate throttling
 
 Requirements
 ------------
