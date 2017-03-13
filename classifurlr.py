@@ -301,6 +301,7 @@ class BlockpageSignatureClassifier(Classifier):
         # fingerprint in the HTTP response body.
         self.body_fingerprints = [
                 re.escape('iframe src="http://10.10'),                                           # IR
+                re.escape('iframe src="http://www.anonymous.com.bh/"'),                          # BH
                 re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                # TR
                 re.escape('www.gamingcommission.gov.gr/index.php/forbidden-access-black-list/'), # GR
                 re.escape('http://eais.rkn.gov.ru/'),                                            # RU
