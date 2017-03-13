@@ -1,4 +1,5 @@
 import random, json, sys, argparse, itertools, base64, difflib, logging, re
+import ipaddress, urllib.parse
 import tldextract
 from haralyzer import HarParser, HarPage
 from bs4 import BeautifulSoup
@@ -372,6 +373,16 @@ class DifferingDomainClassifier(Classifier):
         self.multiplier = 2.5 # Ratios of very different URLs were around 0.28
         self.use_dice = True
 
+    def is_ip(self, url):
+        netloc = urllib.parse.urlparse(url).netloc
+        if ':' in netloc:
+            netloc = netloc.split(':')[0]
+        try:
+            ipaddress.ip_address(netloc)
+            return True
+        except ValueError:
+            return False
+
     # https://en.wikibooks.org/wiki/Algorithm_Implementation/Strings/Dice%27s_coefficient#Python
     def dice_coefficient(self, a, b):
         if not len(a) or not len(b): return 0.0
@@ -415,6 +426,8 @@ class DifferingDomainClassifier(Classifier):
             return min(1.0, (1 - ratio) * self.multiplier)
 
     def extract_domain(self, url):
+        if self.is_ip(url):
+            return urllib.parse.urlparse(url).netloc # IP and port
         return tldextract.extract(url).registered_domain
 
     def requested_domain(self, page):
