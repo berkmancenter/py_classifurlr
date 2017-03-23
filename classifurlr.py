@@ -106,7 +106,20 @@ class RelevanceFilter(Filter):
         return False
 
 class BlockedFinder():
-    pass
+    def __init__(self):
+        self.name = 'Blocked Finder'
+        self.desc = 'Determines whether a down page/session is blocked'
+
+    def process(self, session_classification):
+        if not session_classification.is_down(): return session_classification
+        for pc in session_classification.constituents:
+            for pcc in pc.constituents:
+                if pcc.classifier.name == 'Block page signature' and pcc.is_down():
+                    pcc.mark_blocked()
+                    pc.mark_blocked()
+                    session_classification.mark_blocked()
+
+        return session_classification
 
 class Classification:
     DOWN = 'down'
@@ -114,23 +127,31 @@ class Classification:
     INCONCLUSIVE = 'inconclusive'
 
     def __init__(self, subject, classifier, direction=None, confidence=None,
-            constituents=None, error=None):
+            constituents=None, error=None, blocked=None):
         self.subject = subject
         self.classifier = classifier
         self.direction = direction
         self.confidence = confidence
         self.constituents = constituents
         self.error = error
+        self.blocked = blocked
 
     def subject_id(self):
         if hasattr(self.subject, 'page_id'):
-            return 'page-{}'.format(self.subject.page_id)
+            return self.subject.page_id
         if 'url' in self.subject:
-            return 'session-{}'.format(self.subject['url'])
+            return self.subject['url']
         return ''
+
+    def mark_blocked(self):
+        self.blocked = True
+
+    def mark_not_blocked(self):
+        self.blocked = True
 
     def mark_up(self, confidence=None):
         self.direction = self.UP
+        self.blocked = False
         if self.confidence is None:
             self.confidence = confidence
 
@@ -157,6 +178,7 @@ class Classification:
         d = {
                 'subject': self.subject_id(),
                 'status': self.direction,
+                'blocked': self.blocked,
                 'confidence': round(self.confidence, 6) if self.confidence else None,
                 'classifier': self.classifier.slug(),
                 'error': str(self.error) if self.error else None,
@@ -225,7 +247,8 @@ class ClassifyPipeline(Classifier):
         page_classifications = []
         for page in pages:
             page_classifications.append(self.classify_page(page, session))
-        return self.rollup_session(session, page_classifications)
+        session_classification = self.rollup_session(session, page_classifications)
+        return self.process_session_classification(session_classification)
 
     def classify_async(self, session):
         pages = self.filtered_pages(session)
@@ -253,6 +276,11 @@ class ClassifyPipeline(Classifier):
             lambda p: "{} by {} filter".format(p[0].page_id, p[1].name),
                 self.filtered_out))))
         return pages
+
+    def process_session_classification(self, sc):
+        for pp in self.post_processors:
+            sc = pp.process(sc)
+        return sc
 
     def classify_page(self, page, session):
         constituents = []
