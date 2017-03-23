@@ -1,5 +1,5 @@
 import random, json, sys, argparse, itertools, base64, difflib, logging, re
-import ipaddress, urllib.parse
+import ipaddress, urllib.parse, concurrent.futures
 import tldextract, dateutil.parser
 from collections import defaultdict
 from haralyzer import HarParser, HarPage
@@ -225,6 +225,18 @@ class ClassifyPipeline(Classifier):
         page_classifications = []
         for page in pages:
             page_classifications.append(self.classify_page(page, session))
+        return self.rollup_session(session, page_classifications)
+
+    def classify_async(self, session):
+        pages = self.filtered_pages(session)
+        page_classifications = []
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = []
+            for page in pages:
+                futures.append(executor.submit(self.classify_page, page, session))
+            for future in concurrent.futures.as_completed(futures):
+                page_classifications.append(future.result())
+
         return self.rollup_session(session, page_classifications)
 
     def filtered_pages(self, session):
@@ -534,20 +546,14 @@ class BlockpageSignatureClassifier(Classifier):
                                     header['value']))
                         return 1.0
 
-            # Everything below here relates to the body, so if we can't extract
-            # a body, move on to the next entry.
-            try:
-                body = har_entry_response_content(entry)
-            except NotEnoughDataError:
-                continue
-
-            for fprint in self.body_fingerprints:
-                match = re.search(fprint, body)
-                if match is not None:
-                    logging.debug('{} - Page: {} - Body Pattern: "{}" '
-                            '- Matched: "{}"'.format(self.slug(), page.page_id,
-                                fprint, match.group(0)))
-                    return 1.0
+        body = har_entry_response_content(page.actual_page)
+        for fprint in self.body_fingerprints:
+            match = re.search(fprint, body)
+            if match is not None:
+                logging.debug('{} - Page: {} - Body Pattern: "{}" '
+                        '- Matched: "{}"'.format(self.slug(), page.page_id,
+                            fprint, match.group(0)))
+                return 1.0
         return 0.0
 
 class DifferingDomainClassifier(Classifier):
