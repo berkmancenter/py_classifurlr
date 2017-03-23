@@ -3,3 +3,4 @@ beautifulsoup4
 numpy
 tldextract
 lxml
+python-dateutil
