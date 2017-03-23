@@ -8,12 +8,30 @@ class DifferingDomainTest(unittest.TestCase):
         self.assertFalse(d.is_ip('https://www.google.com'))
 
 class PipelineTest(unittest.TestCase):
+    def test_relevance_filtering(self):
+        filters = [
+                RelevanceFilter()
+                ]
+        fiers = [
+                (StatusCodeClassifier(), 1),
+                ]
+        pipeline = ClassifyPipeline(filters, fiers, [])
+
+    def test_inconclusive_filtering(self):
+        filters = [
+                InconclusiveFilter()
+                ]
+        fiers = [
+                (StatusCodeClassifier(), 1),
+                ]
+        pipeline = ClassifyPipeline(filters, fiers, [])
+
     def test_tally_vote_equal_up_weights(self):
         fiers = [
                 (StatusCodeClassifier(), 1),
                 (StatusCodeClassifier(), 1)
                 ]
-        pipeline = ClassifyPipeline(fiers)
+        pipeline = ClassifyPipeline([], fiers, [])
         classifications = [
                 Classification(fiers[0][0], Classification.DOWN, 0.90),
                 Classification(fiers[1][0], Classification.DOWN, 0.10),
@@ -26,7 +44,7 @@ class PipelineTest(unittest.TestCase):
                 (StatusCodeClassifier(), 2),
                 (StatusCodeClassifier(), 2)
                 ]
-        pipeline = ClassifyPipeline(fiers)
+        pipeline = ClassifyPipeline([], fiers, [])
         classifications = [
                 Classification(fiers[0][0], Classification.DOWN, 0.90),
                 Classification(fiers[1][0], Classification.DOWN, 0.10),
@@ -39,7 +57,7 @@ class PipelineTest(unittest.TestCase):
                 (StatusCodeClassifier(), 3),
                 (StatusCodeClassifier(), 1)
                 ]
-        pipeline = ClassifyPipeline(fiers)
+        pipeline = ClassifyPipeline([], fiers, [])
         classifications = [
                 Classification(fiers[0][0], Classification.DOWN, 0.90),
                 Classification(fiers[1][0], Classification.DOWN, 0.10),
@@ -52,7 +70,7 @@ class PipelineTest(unittest.TestCase):
                 (StatusCodeClassifier(), 3),
                 (StatusCodeClassifier(), 1)
                 ]
-        pipeline = ClassifyPipeline(fiers)
+        pipeline = ClassifyPipeline([], fiers, [])
         classifications = [
                 Classification(fiers[0][0], Classification.DOWN, 0.90),
                 Classification(fiers[1][0], Classification.DOWN, 0.90),
@@ -66,7 +84,7 @@ class PipelineTest(unittest.TestCase):
                 (StatusCodeClassifier(), 2),
                 (StatusCodeClassifier(), 1)
                 ]
-        pipeline = ClassifyPipeline(fiers)
+        pipeline = ClassifyPipeline([], fiers, [])
         classifications = [
                 Classification(fiers[0][0], Classification.DOWN, 0.50),
                 Classification(fiers[1][0], Classification.DOWN, 0.50),
@@ -80,7 +98,7 @@ class PipelineTest(unittest.TestCase):
                 (StatusCodeClassifier(), 1),
                 (StatusCodeClassifier(), 1)
                 ]
-        pipeline = ClassifyPipeline(fiers)
+        pipeline = ClassifyPipeline([], fiers, [])
         classifications = [
                 Classification(fiers[0][0], Classification.DOWN, 0.00),
                 Classification(fiers[1][0], Classification.DOWN, 0.50),
@@ -93,7 +111,7 @@ class PipelineTest(unittest.TestCase):
                 (StatusCodeClassifier(), 2),
                 (StatusCodeClassifier(), 1)
                 ]
-        pipeline = ClassifyPipeline(fiers)
+        pipeline = ClassifyPipeline([], fiers, [])
         classifications = [
                 Classification(fiers[0][0], Classification.DOWN, 0.00),
                 Classification(fiers[1][0], Classification.DOWN, 0.50),

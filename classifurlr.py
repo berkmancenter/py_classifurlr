@@ -34,6 +34,65 @@ def har_entry_response_content(entry):
     except Exception as e:
         raise NotEnoughDataError('Could not parse entry content')
 
+class Filter:
+    def __init__(self):
+        self.name = '__placeholder__'
+        self.desc = '__placeholder__'
+        self.version = '0.1'
+
+    def slug(self):
+        return self.name.lower().replace(' ', '_')
+
+    def filter(self, sessions, pages):
+        self.sessions = sessions
+        pages = []
+        for page in pages:
+            if self.is_filtered_out(page):
+                continue
+            pages.append(page)
+        return pages
+
+class InconclusiveFilter(Filter):
+    def __init__(self):
+        Filter.__init__(self)
+        self.name = 'Inconclusive'
+        self.desc = 'Filters out pages that look inconclusive (CDN captchas, etc.)'
+
+    def is_filtered_out(self, page):
+        entry = page.actual_page
+        if entry is None:
+            return False
+        if 'response' not in entry or 'status' not in entry['response']:
+            return False
+
+        status = page.actual_page['response']['status']
+        if status != 403:
+            return False
+        for header in entry['response']['headers']:
+            if (header['name'].downcase == 'server' and
+                    (header['value'] == 'cloudflare-nginx' or 
+                     header['value'] == 'AkamaiGHost')):
+                        return True
+        return False
+
+class RelevanceFilter(Filter):
+    def __init__(self):
+        Filter.__init__(self)
+        self.name = 'Relevance'
+        self.desc = 'Filters out pages that are not relevant to the given URL'
+
+    def is_filtered_out(self, page):
+        # Don't consider the baseline when classifying
+        if 'baseline' in self.sessions and self.sessions['baseline'] == page.page_id:
+            return True
+
+        # page.url is the initial requested url
+        if not page.url.startswith(sessions['url']):
+            logging.warning('Possibly irrelevant page when looking for '
+                    '"{}": {}'.format(sessions['url'], page.url))
+            #return True
+        return False
+
 class Classification:
     DOWN = 'down'
     def __init__(self, classifier, direction=None, confidence=None, constituents=None):
@@ -70,10 +129,10 @@ class Classifier:
     def is_page_down(self, page):
         raise NotImplementedError('Classifier may implement is_page_down')
 
-    def percent_down_pages(self, sessions):
+    def percent_down_pages(self, pages):
         down_count = 0.0
         total_count = 0.0
-        for page in self.relevant_pages(sessions):
+        for page in pages:
             try:
                 total_count += 1
                 if self.is_page_down(page):
@@ -88,38 +147,31 @@ class Classifier:
             percent_down = down_count / total_count
         return percent_down
 
-    def relevant_pages(self, sessions):
-        har_parser = HarParser(sessions['har'])
-        relevant_pages = []
-        for page in har_parser.pages:
-            # page.url is the initial requested url
-            if not page.url.startswith(sessions['url']):
-                logging.warning('Possibly irrelevant page when looking for '
-                        '"{}": {}'.format(sessions['url'], page.url))
-                #continue # Don't skip
-            if 'baseline' in sessions and sessions['baseline'] == page.page_id:
-                continue
-            relevant_pages.append(page)
-        return relevant_pages
-
-    def classify(self, sessions):
+    def classify(self, sessions, pages):
         self.sessions = sessions
-        confidence = self.percent_down_pages(sessions)
+        self.pages = pages
+        confidence = self.percent_down_pages(pages)
         return Classification(self, Classification.DOWN, confidence)
 
 class ClassifyPipeline(Classifier):
-    def __init__(self, classifiers):
+    def __init__(self, filters, classifiers, post_processors):
         Classifier.__init__(self)
         self.name = 'Classification Pipeline'
         self.desc = 'Classifies by passing data through multiple classifiers and weights their results'
         self.classifiers = [classifier for classifier, _ in classifiers]
         self.weights = self.normalize_weights(classifiers)
+        self.filters = filters
+        self.post_processors = post_processors
 
     def classify(self, sessions):
         self.classifications = []
+        har_parser = HarParser(sessions['har'])
+        pages = har_parser.pages
+        for filt in self.filters:
+            pages = filt.filter(pages)
         for classifier in self.classifiers:
             try:
-                self.classifications.append(classifier.classify(sessions))
+                self.classifications.append(classifier.classify(sessions, pages))
             except NotEnoughDataError as e:
                 logging.warning('Not enough data for {} - {}'.format(classifier.slug(), e))
                 continue
@@ -213,12 +265,12 @@ class ThrottleClassifier(Classifier):
             confidence = min(1.0, bites / self.total_confidence_above_size)
         return confidence
 
-    def classify(self, sessions):
+    def classify(self, sessions, pages):
         # This classifier does things a little differently. Instead of each
         # page voting whether it's up or down, we take the average difference
         # ratio between the requested and final domains.
         self.sessions = sessions
-        confidences = [self.page_down_confidence(page) for page in self.relevant_pages(sessions)]
+        confidences = [self.page_down_confidence(page) for page in pages]
         avg = sum(confidences) / len(confidences)
         return Classification(self, Classification.DOWN, avg)
 
@@ -232,9 +284,9 @@ class ClassifierWithBaseline(Classifier):
         self.baseline = HarPage(sessions['baseline'], har_data=sessions['har'])
         return self.baseline
 
-    def classify(self, sessions):
+    def classify(self, sessions, pages):
         self.set_baseline(sessions)
-        return super().classify(sessions)
+        return super().classify(sessions, pages)
 
 class CosineSimilarityClassifier(ClassifierWithBaseline):
     def __init__(self):
@@ -452,17 +504,22 @@ class DifferingDomainClassifier(Classifier):
             self.slug(), page.page_id, requested, final, round(ratio, 6)))
         return ratio
 
-    def classify(self, sessions):
+    def classify(self, sessions, pages):
         # This classifier does things a little differently. Instead of each
         # page voting whether it's up or down, we take the average difference
         # ratio between the requested and final domains.
         self.sessions = sessions
-        ratios = [self.get_page_ratio(page) for page in self.relevant_pages(sessions)]
+        self.pages = pages
+        ratios = [self.get_page_ratio(page) for page in pages]
         avg = sum(ratios) / len(ratios)
         return Classification(self, Classification.DOWN, avg)
 
 def run(sessions):
-    pipeline_config = [
+    filters = [
+            #RelevanceFilter(),
+            InconclusiveFilter()
+            ]
+    classifiers = [
             (StatusCodeClassifier(), 1.0),
             (ErrorClassifier(), 1.0),
             (PageLengthClassifier(), 1.0),
@@ -472,7 +529,10 @@ def run(sessions):
             (DifferingDomainClassifier(), 1.0),
             (BlockpageSignatureClassifier(), 1.0),
             ]
-    pipeline = ClassifyPipeline(pipeline_config)
+    post_processors = [
+            BlockedFinder()
+            ]
+    pipeline = ClassifyPipeline(filters, classifiers, post_processors)
     classification = pipeline.classify(sessions)
     return classification
 
