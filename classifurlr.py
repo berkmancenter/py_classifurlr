@@ -1,5 +1,5 @@
 import random, json, sys, argparse, itertools, base64, difflib, logging, re
-import ipaddress, urllib.parse, concurrent.futures
+import ipaddress, urllib.parse, concurrent.futures, pprint
 import tldextract, dateutil.parser
 from collections import defaultdict
 from haralyzer import HarParser, HarPage
@@ -97,28 +97,27 @@ class RelevanceFilter(Filter):
 
     def is_filtered_out(self, page):
         # Don't consider the baseline when classifying
-        if 'baseline' in self.session and self.session['baseline'] == page.page_id:
+        if self.session.get_baseline_id() == page.page_id:
             logging.debug("Filtering out baseline {}".format(page.page_id))
             return True
 
         # page.url is the initial requested url
-        if not page.url.startswith(self.session['url']):
-            logging.warning('Possibly irrelevant page when looking for '
-                    '"{}": {}'.format(self.session['url'], page.url))
+        if not page.url.startswith(self.session.url):
+            logging.info('Possibly irrelevant page when looking for '
+                    '"{}": {}'.format(self.session.url, page.url))
             #return True
         return False
 
 class BlockedFinder():
     def __init__(self):
         self.name = 'Blocked Finder'
-        self.desc = 'Determines whether a down page/session is blocked'
+        self.desc = 'Determines whether a session is blocked by looking for blocked pages'
 
     def process(self, session_classification):
         if not session_classification.is_down(): return session_classification
         for pc in session_classification.constituents:
             for pcc in pc.constituents:
-                if pcc.classifier.name == 'Block page signature' and pcc.is_down():
-                    pcc.mark_blocked()
+                if pcc.is_blocked() or pc.is_blocked():
                     pc.mark_blocked()
                     session_classification.mark_blocked()
 
@@ -148,13 +147,14 @@ class Classification:
 
     def mark_blocked(self):
         self.blocked = True
+        self.mark_down(1.0)
 
     def mark_not_blocked(self):
-        self.blocked = True
+        self.blocked = False
 
     def mark_up(self, confidence=None):
         self.direction = self.UP
-        self.blocked = False
+        self.mark_not_blocked()
         if self.confidence is None:
             self.confidence = confidence
 
@@ -176,6 +176,9 @@ class Classification:
 
     def is_inconclusive(self):
         return self.direction == self.INCONCLUSIVE
+
+    def is_blocked(self):
+        return self.blocked
 
     def as_dict(self):
         d = {
@@ -208,6 +211,10 @@ class Classifier:
     def page_down_confidence(self, page, session):
         raise NotImplementedError('Classifier may implement page_down_confidence')
 
+    def is_page_blocked(self, page, session, classification):
+        if classification.is_up(): return False
+        return None
+
     def classify_page(self, page, session):
         classification = Classification(page, self)
         try:
@@ -218,6 +225,8 @@ class Classifier:
                 classification.mark_up((0.5 - down_confidence) * 2.0)
         except NotEnoughDataError as e:
             classification.mark_inconclusive(e)
+        if self.is_page_blocked(page, session, classification):
+            classification.mark_blocked()
         return classification
 
 class ClassifyPipeline(Classifier):
@@ -266,8 +275,7 @@ class ClassifyPipeline(Classifier):
         return self.rollup_session(session, page_classifications)
 
     def filtered_pages(self, session):
-        har_parser = HarParser(session['har'])
-        pages = har_parser.pages
+        pages = session.get_pages()
         logging.debug('Begin filtering: {} pages'.format(len(pages)))
         for filt in self.filters:
             logging.debug('Running filter {}'.format(filt.name))
@@ -275,9 +283,10 @@ class ClassifyPipeline(Classifier):
             self.filtered_out += zip(toss, [filt] * len(toss))
             pages = keep
         logging.debug('Finished filtering: {} pages'.format(len(pages)))
-        logging.debug('Filtered out: {}'.format(list(map(
-            lambda p: "{} by {} filter".format(p[0].page_id, p[1].name),
-                self.filtered_out))))
+        if len(self.filtered_out) > 0:
+            logging.debug('Filtered out: {}'.format(list(map(
+                lambda p: "{} by {} filter".format(p[0].page_id, p[1].name),
+                    self.filtered_out))))
         return pages
 
     def process_session_classification(self, sc):
@@ -424,10 +433,20 @@ class ErrorClassifier(Classifier):
         self.name = 'Error'
         self.desc = 'Classifies all session that contain errors as down'
 
+    def is_page_blocked(self, page, session, classification):
+        if classification.is_up(): return False
+        errors = session.get_page_errors(page.page_id)
+        country = session.get_page_country_code(page.page_id)
+        if errors is None or country is None:
+            return None
+        if country == 'CN' and any([('Operation canceled' in e) for e in errors]):
+            return True
+        return None
+
     def page_down_confidence(self, page, session):
-        if page.page_id not in session['pageDetail']:
-            raise NotEnoughDataError('No page details for page "{}"'.format(page.page_id))
-        errors = session['pageDetail'][page.page_id]['errors']
+        errors = session.get_page_errors(page.page_id)
+        if errors is None or len(errors) == 0:
+            raise NotEnoughDataError('No errors for page "{}"'.format(page.page_id))
         logging.debug("{} - Page: {} - Errors: {}".format(self.slug(), page.page_id,
             errors))
         return 1.0 if len(errors) > 0 else 0.0
@@ -459,13 +478,11 @@ class ThrottleClassifier(Classifier):
 
 class ClassifierWithBaseline(Classifier):
     def get_baseline(self, session):
-        if hasattr(self, 'baseline'):
-            return self.baseline
-        if 'baseline' not in session or session['baseline'] == False:
+        baseline = session.get_baseline()
+        if baseline is None:
             raise NotEnoughDataError('Could not locate baseline for URL '
-                    '"{}"'.format(session['url']))
-        self.baseline = HarPage(session['baseline'], har_data=session['har'])
-        return self.baseline
+                    '"{}"'.format(session.url))
+        return baseline
 
 class CosineSimilarityClassifier(ClassifierWithBaseline):
     def __init__(self):
@@ -479,11 +496,7 @@ class CosineSimilarityClassifier(ClassifierWithBaseline):
 
     def page_down_confidence(self, page, session):
         baseline = self.get_baseline(session)
-        try:
-            baseline_content = har_entry_response_content(baseline.actual_page)
-        except NotEnoughDataError as e:
-            raise NotEnoughDataError('Could not locate baseline '
-                    'content for URL "{}"'.format(page.url)) from e
+        baseline_content = har_entry_response_content(baseline.actual_page)
         try:
             this_content = har_entry_response_content(page.actual_page)
         except NotEnoughDataError as e:
@@ -567,6 +580,10 @@ class BlockpageSignatureClassifier(Classifier):
                 ('Location', re.escape('http://warning.rt.ru')),                   # RU
                 ('Via', re.escape('1.1 C1102')),                                   # UZ
                 ]
+
+    def is_page_blocked(self, page, session, classification):
+        if classification.is_down(): return True
+        return None
 
     def page_down_confidence(self, page, session):
         for entry in page.entries:
@@ -669,13 +686,78 @@ class DifferingDomainClassifier(Classifier):
             raise NotEnoughDataError('Could not find request URL for '
                     'URL "{}"'.format(page.url)) from e
 
+    def is_page_blocked(self, page, session, classification):
+        block_page_urls = [
+                'http://blocked.zajil.com/' # KW
+                ]
+        if page.actual_page and page.actual_page['request']['url'] in block_page_urls:
+            return True
+        return None
+
     def page_down_confidence(self, page, session):
         requested = self.requested_domain(page)
         final = self.final_domain(page)
         ratio = self.get_diff_ratio(requested, final)
-        logging.debug('{} - Page: {} - Requested: {} - Final: {} - Ratio: {}'.format(
-            self.slug(), page.page_id, requested, final, round(ratio, 6)))
+        if ratio > 0:
+            logging.debug('{} - Page: {} - Requested: {} - Final: {} - Diff: {}'.format(
+                self.slug(), page.page_id, requested, final, round(ratio, 6)))
         return ratio
+
+class Session:
+    def __init__(self, data):
+        self.data = data
+        self.url = self['url']
+        self.pages = None
+        self.baseline = None
+
+    def __iter__(self):
+        return self.data.__iter__()
+
+    def __next__(self):
+        return self.data.__next__()
+
+    def __getitem__(self, key):
+        if hasattr(self, key):
+            return getattr(self, key)
+        return self.data.__getitem__(key)
+
+    def get_url(self):
+        return self.url
+
+    def get_baseline_id(self):
+        if 'baseline' not in self: return None
+        return self['baseline']
+
+    def get_baseline(self):
+        if self.baseline: return baseline
+        for page in self.get_pages():
+            if page.page_id == self.get_baseline_id():
+                self.baseline = page
+                return self.baseline
+        return None
+
+    def get_pages(self):
+        if self.pages: return self.pages
+        har_parser = HarParser(self['har'])
+        self.pages = har_parser.pages
+        return self.pages
+
+    def get_page_details(self, page_id):
+        if page_id not in self['pageDetail']:
+            return None
+        return self['pageDetail'][page_id]
+
+    def get_page_errors(self, page_id):
+        details = self.get_page_details(page_id)
+        if 'errors' not in details:
+            return None
+        return details['errors']
+
+    def get_page_country_code(self, page_id):
+        details = self.get_page_details(page_id)
+        if 'countryCode' not in details:
+            return None
+        return details['countryCode']
 
 def run(session):
     filters = [
@@ -696,6 +778,7 @@ def run(session):
             BlockedFinder()
             ]
     pipeline = ClassifyPipeline(filters, classifiers, post_processors)
+    session = Session(session)
     classification = pipeline.classify(session)
     return classification
 
