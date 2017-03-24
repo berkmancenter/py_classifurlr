@@ -32,7 +32,10 @@ class NotEnoughDataError(LookupError):
     pass
 
 def har_entry_response_content(entry):
-    content = entry['response']['content']
+    try:
+        content = entry['response']['content']
+    except Exception:
+        raise NotEnoughDataError('Could not parse entry content')
     if 'text' not in content:
         raise NotEnoughDataError('"text" field not found in entry content')
     text = content['text']
@@ -528,8 +531,11 @@ class BlockpageSignatureClassifier(Classifier):
         self.body_fingerprints = [
                 re.escape('iframe src="http://10.10'),                                           # IR
                 re.escape('iframe src="http://www.anonymous.com.bh/"'),                          # BH
+                re.escape('iframe src="http://196.29.164.27/ntc/ntcblock.html'),                 # SD
+                re.escape('iframe src="http://block.om/'),                                       # OM
                 re.escape('This web site has been blocked for violating regulations and laws of Kingdom of Bahrain.'),# BH
                 re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                # TR
+                re.escape('page should not be blocked please <a href="http://www.internet.gov.sa/'),# SA
                 re.escape('www.gamingcommission.gov.gr/index.php/forbidden-access-black-list/'), # GR
                 re.escape('http://eais.rkn.gov.ru/'),                                            # RU
                 re.escape('The page you have requested has been blocked'),                       # IN
