@@ -738,9 +738,13 @@ class Session:
 
     def get_pages(self):
         if self.pages: return self.pages
-        har_parser = HarParser(self['har'])
-        self.pages = har_parser.pages
-        return self.pages
+        try:
+            har_parser = HarParser(self['har'])
+            self.pages = har_parser.pages
+            return self.pages
+        except Exception as e:
+            logging.warning('Saw exception when parsing HAR: {}'.format(e))
+            return []
 
     def get_page_details(self, page_id):
         if page_id not in self['pageDetail']:
