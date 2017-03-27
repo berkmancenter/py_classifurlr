@@ -257,9 +257,13 @@ class ClassifyPipeline(Classifier):
     def classify(self, session):
         pages = self.filtered_pages(session)
         page_classifications = []
-        for page in pages:
-            page_classifications.append(self.classify_page(page, session))
-        session_classification = self.rollup_session(session, page_classifications)
+        if len(pages) == 0:
+            session_classification = Classification(session, self,
+                    Classification.INCONCLUSIVE, 1.0)
+        else:
+            for page in pages:
+                page_classifications.append(self.classify_page(page, session))
+            session_classification = self.rollup_session(session, page_classifications)
         return self.process_session_classification(session_classification)
 
     def classify_async(self, session):
