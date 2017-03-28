@@ -790,15 +790,6 @@ def run(session):
     classification = pipeline.classify(session)
     return classification
 
-def app(environ, start_response):
-    session_json = environ['wsgi.input'].read().decode('utf-8')
-    session = json.loads(session_json)
-    status = '201 Created'
-    headers = [('Content-Type', 'application/json')]
-    start_response(status, headers)
-    c = run(session)
-    return [c.as_json().encode('utf-8')]
-
 if __name__ == '__main__':
     args = parse_args()
     if args.debug:

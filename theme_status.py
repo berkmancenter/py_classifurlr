@@ -3,6 +3,7 @@ import logging
 from pprint import pprint
 
 CATEGORY_CSV = 'categories.csv'
+CATEGORY_CSV_URL = 'https://raw.githubusercontent.com/berkmancenter/url-lists/master/category_codes.csv'
 CORE_ENDPOINT = 'http://localhost:3000/'
 
 def parse_args():
@@ -20,6 +21,8 @@ def parse_args():
     return parser.parse_args()
 
 class ThemeInCountryStatus:
+    # We test the status in this order because e.g. pervasive blocking is also
+    # substantial blocking, but substantial is not necessarily pervasive.
     TEST_ORDER = ['pervasive', 'substantial', 'selective', 'suspected', 'none']
 
     def __init__(self, theme, country, url_statuses,
@@ -30,11 +33,20 @@ class ThemeInCountryStatus:
         self.categories = None
         self.url_statuses = url_statuses
         self.category_csv_filename = category_csv_filename
-        self.category_csv_file = open(self.category_csv_filename, 'r')
-
+        try:
+            self.category_csv_file = open(self.category_csv_filename, 'r')
+        except FileNotFoundError as e:
+            self._dl_categories_file()
+            self.category_csv_file = open(self.category_csv_filename, 'r')
 
     def __del__(self):
         self.category_csv_file.close()
+
+    def _dl_categories_file(self, url=CATEGORY_CSV_URL, filename=CATEGORY_CSV):
+        logging.info('Downloading categories file')
+        with urllib.request.urlopen(url) as u, open(CATEGORY_CSV, 'w') as f:
+            data = u.read().decode('utf-8')
+            f.write(data)
 
     def as_dict(self):
         return {
@@ -206,22 +218,16 @@ class ThemeInCountryStatus:
             self.url_statuses.remove(s)
 
     def _add_category_to_url_statuses(self):
+        logging.info('Categorizing URLs')
         url_cats = self.get_urls_categories([s['url'] for s in self.url_statuses])
         for s in self.url_statuses:
             s['category'] = url_cats[s['url']].strip().upper()
+        logging.info('Finished categorizing URLs')
 
-def app(environ, start_response):
-    statuses_json = environ['wsgi.input'].read().decode('utf-8')
-    parsed_qs = urllib.parse.parse_qs(environ['QUERY_STRING'])
-    theme = parsed_qs['theme'][0]
-    country = parsed_qs['country'][0]
-    statuses = json.loads(statuses_json)
-    status = '201 Created'
-    headers = [('Content-Type', 'application/json')]
-    start_response(status, headers)
-    c = ThemeInCountryStatus(theme, country, statuses)
+def run(theme, country, url_statuses):
+    c = ThemeInCountryStatus(theme, country, url_statuses)
     c.classify()
-    return [c.as_json().encode('utf-8')]
+    return c
 
 if __name__ == '__main__':
     args = parse_args()
