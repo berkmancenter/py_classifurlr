@@ -1,4 +1,4 @@
-import unittest, classifurlr
+import unittest
 from classifurlr import *
 
 class DifferingDomainTest(unittest.TestCase):
