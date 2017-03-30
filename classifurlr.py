@@ -543,6 +543,12 @@ class BlockpageSignatureClassifier(Classifier):
 
         # Signatures from https://github.com/TheTorProject/ooni-pipeline/blob/master/pipeline/batch/sql_tasks.py
 
+        #TODO: (I've attempted all these, but failed.)
+        # Find blockpage for Azerbaijan
+        # Develop metric for Ethiopia (looks like 403s from "nginx" server)
+        # Find Jordan block page
+        # Myanmar block page
+
         # These are the countries for which we identify blocking by looking for certain
         # fingerprint in the HTTP response body.
         self.body_fingerprints = [
@@ -550,6 +556,7 @@ class BlockpageSignatureClassifier(Classifier):
                 re.escape('iframe src="http://www.anonymous.com.bh/"'),                          # BH
                 re.escape('iframe src="http://196.29.164.27/ntc/ntcblock.html'),                 # SD
                 re.escape('iframe src="http://block.om/'),                                       # OM
+                re.escape("src='http://128.204.240.1"),                                          # SA
                 re.escape('This web site has been blocked for violating regulations and laws of Kingdom of Bahrain.'),# BH
                 re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                # TR
                 re.escape('page should not be blocked please <a href="http://www.internet.gov.sa/'),# SA
@@ -562,10 +569,16 @@ class BlockpageSignatureClassifier(Classifier):
                 re.escape('lagt at blokere for adgang til siden.'),                              # DK
                 re.escape('xtpage = "page-blocage-terrorisme"'),                                 # FR
                 re.escape('http://warning.or.kr'),                                               # KR
+                re.escape('<meta name="kcsc" content="blocking" />'),                            # KR
                 re.escape('prohibited for viewership from within Pakistan'),                     # PK
+                re.escape('14. pontja, illetve 36/G'),                                           # HU
+                re.escape('Your requested url has been blocked as per the directions received from Department of Telecommunications,Government of India.'), # IN
+                re.escape('Your requested URL has been blocked as per the directions received from Department of Telecommunications, Government of India.'), # IN
+                re.escape('iframe src="http://www.airtel.in/dot/'),                              # IN
+
 
                 # From ICLab https://github.com/iclab/iclab-dmp/blob/master/primitives/block_page_detection.py
-                "src=[\",\']http://(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\:[0-9]{2,5})?/webadmin/deny/",
+                "src=[\",\']http://(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\:[0-9]{2,5})?/webadmin/deny/", # NetSweeper
                 "src=[\",\']http://(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\:[0-9]{2,5})?/blocked.html",
                 re.escape("The url has been blocked")
                 ]
@@ -582,6 +595,7 @@ class BlockpageSignatureClassifier(Classifier):
                 ('Location', re.escape('http://block-no.altibox.net/')),           # NO
                 ('Location', re.escape('http://blocked.nb.sky.com')),              # UK
                 ('Location', re.escape('http://warning.rt.ru')),                   # RU
+                ('Location', re.escape('https://www.atlex.ru/block.html')),        # RU
                 ('Via', re.escape('1.1 C1102')),                                   # UZ
                 ]
 
