@@ -80,8 +80,12 @@ def dom_similarity(page1, page2):
     tags = ['[document]']    # root tag for BeautifulSoup
     couples_lab = []
     couples_field = []
-    dom1 = BeautifulSoup(page1, 'html.parser')
-    dom2 = BeautifulSoup(page2, 'html.parser')
+    try:
+        dom1 = BeautifulSoup(page1, 'html.parser')
+        dom2 = BeautifulSoup(page2, 'html.parser')
+    except Exception as e:
+        return 0.0 # just say they're different 
+
     for x in dom1.findAll():
         couples_lab.append((str(x.parent.name), str(x.name)))
         if str(x.name) not in tags:

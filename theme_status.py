@@ -1,10 +1,7 @@
 import sqlite3, csv, argparse, json, urllib.parse, sys, urllib.request
 import logging
+from .categorization import Categorization
 from pprint import pprint
-
-CATEGORY_CSV = 'categories.csv'
-CATEGORY_CSV_URL = 'https://raw.githubusercontent.com/berkmancenter/url-lists/master/category_codes.csv'
-CORE_ENDPOINT = 'http://localhost:3000/'
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Determine whether a content theme is inaccessible')
@@ -25,28 +22,12 @@ class ThemeInCountryStatus:
     # substantial blocking, but substantial is not necessarily pervasive.
     TEST_ORDER = ['pervasive', 'substantial', 'selective', 'suspected', 'none']
 
-    def __init__(self, theme, country, url_statuses,
-            category_csv_filename=CATEGORY_CSV):
+    def __init__(self, theme, country, url_statuses):
         self.theme = theme.strip()
         self.country = country.strip().upper()
         self.status = None
         self.categories = None
         self.url_statuses = url_statuses
-        self.category_csv_filename = category_csv_filename
-        try:
-            self.category_csv_file = open(self.category_csv_filename, 'r')
-        except FileNotFoundError as e:
-            self._dl_categories_file()
-            self.category_csv_file = open(self.category_csv_filename, 'r')
-
-    def __del__(self):
-        self.category_csv_file.close()
-
-    def _dl_categories_file(self, url=CATEGORY_CSV_URL, filename=CATEGORY_CSV):
-        logging.info('Downloading categories file')
-        with urllib.request.urlopen(url) as u, open(CATEGORY_CSV, 'w') as f:
-            data = u.read().decode('utf-8')
-            f.write(data)
 
     def as_dict(self):
         return {
@@ -72,7 +53,7 @@ class ThemeInCountryStatus:
                     counts['up'] += 1
                 if status['status'].strip().lower() == 'inconclusive':
                     counts['inconclusive'] += 1
-                if status['blocked'] == True:
+                if 'blocked' in status and status['blocked'] == True:
                     counts['blocked'] += 1
                 cat_counts[category] = counts
         return cat_counts
@@ -151,49 +132,11 @@ class ThemeInCountryStatus:
 
     def classify(self):
         self._remove_irrelevant_statuses()
-        self.categories = self.get_theme_categories()
+        self.categories = Categorization.get_theme_categories(self.theme)
         self._add_category_to_url_statuses()
         self._remove_uncategorized_statuses()
         self._set_status()
         return self.status
-
-    def get_urls_categories(self, urls, country=None):
-        endpoint = CORE_ENDPOINT + 'urls/categorize'
-        country = self.country if country is None else country
-        data = urllib.parse.urlencode({ 'url[]': urls, 'country': country },
-                doseq=True)
-        data = data.encode('ascii')
-        with urllib.request.urlopen(endpoint, data) as f:
-            try:
-                return {url: c[country] for url, c in
-                        json.loads(f.read().decode('utf-8')).items()}
-            except KeyError as e:
-                logging.warning('Failed to find category - URL: "{}", Country: '
-                        '"{}"'.format(url, country))
-                return None
-
-    def get_url_category(self, url, country=None):
-        # Rather not make this a network call, but the logic is pretty
-        # complicated given multi-country lists (like global).
-        endpoint = CORE_ENDPOINT + 'urls/categorize'
-        country = self.country if country is None else country
-        data = urllib.parse.urlencode({ 'url': url, 'country': country })
-        data = data.encode('ascii')
-        with urllib.request.urlopen(endpoint, data) as f:
-            try:
-                return json.loads(f.read().decode('utf-8'))[country]
-            except KeyError as e:
-                logging.warning('Failed to find category - URL: "{}", Country: '
-                        '"{}"'.format(url, country))
-                return None
-
-    def get_theme_categories(self):
-        categories = []
-        for row in csv.DictReader(self.category_csv_file):
-            if row['theme'].strip().upper() == self.theme.upper():
-                categories.append(row['code'].strip().upper())
-        self.category_csv_file.seek(0)
-        return categories
 
     def _set_status(self):
         for status in self.TEST_ORDER:
@@ -219,8 +162,11 @@ class ThemeInCountryStatus:
 
     def _add_category_to_url_statuses(self):
         logging.info('Categorizing URLs')
-        url_cats = self.get_urls_categories([s['url'] for s in self.url_statuses])
-        for s in self.url_statuses:
+        statuses_to_categorize = [s for s in self.url_statuses
+                if 'category' not in s or s['category'] is None]
+        if len(statuses_to_categorize) == 0: return
+        url_cats = Categorization.get_urls_categories([s['url'] for s in statuses_to_categorize], self.country)
+        for s in statuses_to_categorize:
             s['category'] = url_cats[s['url']].strip().upper()
         logging.info('Finished categorizing URLs')
 

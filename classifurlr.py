@@ -4,7 +4,7 @@ import tldextract, dateutil.parser
 from collections import defaultdict
 from haralyzer import HarParser, HarPage
 from bs4 import BeautifulSoup
-from similarityMetrics import similarity_metrics
+from .similarityMetrics import similarity_metrics
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Determine whether a collection of pages is inaccessible')

@@ -1,21 +1,24 @@
 import unittest
-from theme_status import ThemeInCountryStatus
+from .categorization import Categorization
 
-class ThemeInCountryStatusTest(unittest.TestCase):
-    def test_url_category(self):
-        country = 'PK'
-        t = ThemeInCountryStatus('Political Content', country, [])
-        c = t.get_url_category('http://zougla.gr/')
+class CategorizationTest(unittest.TestCase):
+    def test_get_url_category(self):
+        c = Categorization.get_url_category('http://zougla.gr/', 'PK')
         self.assertEqual('NEWS', c)
 
-    def test_theme_categories(self):
+    def test_get_theme_categories(self):
         theme = 'Political Content'
         expected = ['DEV', 'ENV', 'FEXP', 'HAL', 'HATE', 'HUMR', 'MINR',
                 'NEWS', 'POLT', 'REL', 'WOMR']
-        t = ThemeInCountryStatus('Political Content', 'PK', [])
-        self.assertEqual(expected, sorted(t.get_theme_categories()))
+        self.assertEqual(expected, sorted(Categorization.get_theme_categories(theme)))
+
+    def test_get_category_theme(self):
+        category = 'FEXP'
+        expected = 'Political Content'
+        self.assertEqual(expected, Categorization.get_category_theme(category))
 
     def test_get_urls_categories(self):
+        country = 'SA'
         urls = [
                 'http://www.alhijazonline.com/',
                 'https://www.torproject.org/',
@@ -24,8 +27,7 @@ class ThemeInCountryStatusTest(unittest.TestCase):
                 'http://www.alhijazonline.com/': 'POLT',
                 'https://www.torproject.org/': 'ANON',
                 'https://twitter.com': 'PLATFORM'}
-        t = ThemeInCountryStatus('Political Content', 'SA', [])
-        self.assertEqual(expected, t.get_urls_categories(urls))
+        self.assertEqual(expected, Categorization.get_urls_categories(urls, country))
 
 if __name__ == '__main__':
     unittest.main()
