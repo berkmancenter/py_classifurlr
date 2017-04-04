@@ -20,7 +20,7 @@ def parse_args():
 class ThemeInCountryStatus:
     # We test the status in this order because e.g. pervasive blocking is also
     # substantial blocking, but substantial is not necessarily pervasive.
-    TEST_ORDER = ['pervasive', 'substantial', 'selective', 'suspected', 'none']
+    TEST_ORDER = ['pervasive', 'substantial', 'selective', 'none', 'suspected']
 
     def __init__(self, theme, country, url_statuses):
         self.theme = theme.strip()
@@ -79,7 +79,7 @@ class ThemeInCountryStatus:
 
     # None: No category has any URLs marked as blocked.
     def is_none(self):
-        return not any(s['blocked'] for s in self.url_statuses)
+        return True
 
     # Suspected: we don't find filtering, but we're not giving up a clean bill
     # of health.

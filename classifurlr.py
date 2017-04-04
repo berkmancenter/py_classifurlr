@@ -546,8 +546,7 @@ class BlockpageSignatureClassifier(Classifier):
         #TODO: (I've attempted all these, but failed.)
         # Find blockpage for Azerbaijan
         # Develop metric for Ethiopia (looks like 403s from "nginx" server)
-        # Find Jordan block page
-        # Myanmar block page
+        # Myanmar block page - look at OONI report
 
         # These are the countries for which we identify blocking by looking for certain
         # fingerprint in the HTTP response body.
