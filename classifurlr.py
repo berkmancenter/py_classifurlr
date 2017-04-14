@@ -567,35 +567,40 @@ class BlockpageSignatureClassifier(Classifier):
         #TODO: (I've attempted all these, but failed.)
         # Find blockpage for Azerbaijan
         # Develop metric for Ethiopia (looks like 403s from "nginx" server)
-        # Find Jordan block page
-        # Myanmar block page
+        # Myanmar block page - look at OONI report
 
         # These are the countries for which we identify blocking by looking for certain
         # fingerprint in the HTTP response body.
         self.body_fingerprints = [
-                'iframe [^>]* src=["\']https?:\/\/10\.10',                                       # IR
-                'iframe [^>]* src=["\']https?:\/\/www\.anonymous\.com\.bh',                      # BH
-                'iframe [^>]* src=["\']https?:\/\/196\.29\.164\.27\/ntc\/ntcblock\.html',        # SD
-                'iframe [^>]* src=["\']https?:\/\/block\.om\/',                                  # OM
-                'iframe [^>]* src=["\']https?:\/\/128\.204\.240\.1',                             # SA
-                'iframe [^>]* src=["\']https?:\/\/www\.airtel\.in\/dot\/',                       # IN
-                re.escape('This web site has been blocked for violating regulations and laws of Kingdom of Bahrain.'),# BH
-                re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                # TR
-                re.escape('page should not be blocked please <a href="http://www.internet.gov.sa/'),# SA
-                re.escape('www.gamingcommission.gov.gr/index.php/forbidden-access-black-list/'), # GR
-                re.escape('http://eais.rkn.gov.ru/'),                                            # RU
-                re.escape('The page you have requested has been blocked'),                       # IN
                 re.escape('that is considered illegal according to Belgian legislation'),        # BE
-                re.escape('GdF Stop Page'),                                                      # IT
+                re.escape('This web site has been blocked for violating regulations and laws of Kingdom of Bahrain.'),# BH
+                'iframe [^>]* src=["\']https?:\/\/www\.anonymous\.com\.bh',                      # BH
+                re.escape('This web site has been blocked for violating regulations and laws of Kingdom of Bahrain.'),# BH
                 re.escape('nba.com.cy/Eas/eas.nsf/All/6F7F17A7790A55C8C2257B130055C86F'),        # CY
                 re.escape('lagt at blokere for adgang til siden.'),                              # DK
                 re.escape('xtpage = "page-blocage-terrorisme"'),                                 # FR
-                re.escape('http://warning.or.kr'),                                               # KR
-                re.escape('<meta name="kcsc" content="blocking" />'),                            # KR
-                re.escape('prohibited for viewership from within Pakistan'),                     # PK
+                re.escape('www.gamingcommission.gov.gr/index.php/forbidden-access-black-list/'), # GR
                 re.escape('14. pontja, illetve 36/G'),                                           # HU
+                'iframe [^>]* src=["\']https?:\/\/www\.airtel\.in\/dot\/',                       # IN
+                re.escape('The page you have requested has been blocked'),                       # IN
                 re.escape('Your requested url has been blocked as per the directions received from Department of Telecommunications,Government of India.'), # IN
                 re.escape('Your requested URL has been blocked as per the directions received from Department of Telecommunications, Government of India.'), # IN
+                'iframe [^>]* src=["\']https?:\/\/10\.10',                                       # IR
+                re.escape('GdF Stop Page'),                                                      # IT
+                re.escape('http://warning.or.kr'),                                               # KR
+                re.escape('<meta name="kcsc" content="blocking" />'),                            # KR
+                re.escape('قد حجب الموقع بناء لأمر القضاء اللبناني'),                             # LB
+                re.escape('This website is not available in Malaysia as it violate'),            # MY
+                'iframe [^>]* src=["\']https?:\/\/block\.om\/',                                  # OM
+                re.escape('prohibited for viewership from within Pakistan'),                     # PK
+                re.escape('http://eais.rkn.gov.ru/'),                                            # RU
+                'iframe [^>]* src=["\']https?:\/\/128\.204\.240\.1',                             # SA
+                re.escape('page should not be blocked please <a href="http://www.internet.gov.sa/'),# SA
+                'iframe [^>]* src=["\']https?:\/\/196\.29\.164\.27\/ntc\/ntcblock\.html',        # SD
+                re.escape('iframe src="http://103.208.24.21'),                                   # TH
+                re.escape('ถูกระงับโดยกระทรวงดิจิทัลเพื่อเศรษฐกิจและสังคม'),                              # TH
+                re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                # TR
+                re.escape('This domain name has been seized by ICE - Homeland Security Investigations'),# US
 
 
                 # From ICLab https://github.com/iclab/iclab-dmp/blob/master/primitives/block_page_detection.py
@@ -607,16 +612,16 @@ class BlockpageSignatureClassifier(Classifier):
         # These are countries for which we detect blocking by looking for certain
         # header values.
         self.header_fingerprints = [
-                ('Server', 'Protected by WireFilter'),                             # SA
                 ('Location', re.escape('http://internet-positif.org')),            # ID
-                ('Location', re.escape('http://196.1.211.6:8080/alert/')),         # SD
-                ('Location', re.escape('http://www.vodafone.qa/alu.cfm')),         # QA
                 ('Location', re.escape('http://www.warning.or.kr')),               # KR
-                ('Location', re.escape('http://mobilegen.vodafone.pt/denied/dn')), # PT
                 ('Location', re.escape('http://block-no.altibox.net/')),           # NO
-                ('Location', re.escape('http://blocked.nb.sky.com')),              # UK
+                ('Location', re.escape('http://mobilegen.vodafone.pt/denied/dn')), # PT
+                ('Location', re.escape('http://www.vodafone.qa/alu.cfm')),         # QA
                 ('Location', re.escape('http://warning.rt.ru')),                   # RU
                 ('Location', re.escape('https://www.atlex.ru/block.html')),        # RU
+                ('Server', 'Protected by WireFilter'),                             # SA
+                ('Location', re.escape('http://196.1.211.6:8080/alert/')),         # SD
+                ('Location', re.escape('http://blocked.nb.sky.com')),              # UK
                 ('Via', re.escape('1.1 C1102')),                                   # UZ
                 ]
 
