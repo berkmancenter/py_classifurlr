@@ -54,6 +54,7 @@ class Categorization:
 
     @classmethod
     def get_category_theme(cls, category):
+        if category is None: return None
         csv_file = cls._get_categories_csv()
         for row in csv.DictReader(csv_file):
             if row['code'].strip().upper() == category.strip().upper():

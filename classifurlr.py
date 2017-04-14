@@ -1,4 +1,4 @@
-import random, json, sys, argparse, itertools, base64, difflib, logging, re
+import json, argparse, itertools, base64, difflib, logging, re
 import ipaddress, urllib.parse, concurrent.futures, pprint
 import tldextract, dateutil.parser
 from collections import defaultdict
@@ -70,9 +70,9 @@ class InconclusiveFilter(Filter):
     def __init__(self):
         Filter.__init__(self)
         self.name = 'Inconclusive'
-        self.desc = 'Filters out pages that look inconclusive (CDN captchas, etc.)'
+        self.desc = 'Filters out pages that look inconclusive (CDN captchas, VPN timeouts, etc.)'
 
-    def is_filtered_out(self, page):
+    def is_captcha_challenge(self, page):
         entry = page.actual_page
         if entry is None:
             return False
@@ -83,11 +83,31 @@ class InconclusiveFilter(Filter):
         if status != 403:
             return False
         for header in entry['response']['headers']:
+            # Incapsula CDN
+            if (header['name'].lower() == 'set-cookie' and
+                header['value'].lower().startswith('incap_ses_')):
+                return True
+
+            # Cloudflare and Akamai CDNs
             if (header['name'].lower() == 'server' and
                     (header['value'] == 'cloudflare-nginx' or
                      header['value'] == 'AkamaiGHost')):
                         return True
         return False
+
+    def is_vpn_timeout(self, page):
+        errors = self.session.get_page_errors(page.page_id)
+        if errors is None or len(errors) == 0:
+            return False
+        return (
+            errors.startswith("(28, 'Resolving timed out") or
+            errors.startswith("(28, 'Operation timed out") or
+            errors.startswith("(28, 'Connection timed out") or
+            errors.startswith("(7, 'Failed to connect")
+            )
+
+    def is_filtered_out(self, page):
+        return self.is_captcha_challenge(page) or self.is_vpn_timeout(page)
 
 class RelevanceFilter(Filter):
     def __init__(self):
@@ -230,9 +250,6 @@ class Classifier:
         return classification
 
 class ClassifyPipeline(Classifier):
-    DOWN_VS_UP_WEIGHT = 3.0
-    LOOK_BACK_DAYS = 90
-
     def __init__(self, filters, classifiers, post_processors):
         Classifier.__init__(self)
         self.name = 'Classification Pipeline'
@@ -362,8 +379,8 @@ class ClassifyPipeline(Classifier):
         return classification
 
     def classification_weight(self, c, now):
-        down_vs_up_weight = 3.0
-        look_back_days = 90
+        down_vs_up_weight = 1.5
+        look_back_days = 60
         weight_from_status = 1.0 if c.is_up() else down_vs_up_weight
         seconds_old = (now - dateutil.parser.parse(c.subject.startedDateTime)).total_seconds()
         domain = [look_back_days * 24 * 60 * 60 * -1, 0.0]
@@ -437,15 +454,19 @@ class ErrorClassifier(Classifier):
         self.name = 'Error'
         self.desc = 'Classifies all session that contain errors as down'
 
-    def is_page_blocked(self, page, session, classification):
-        if classification.is_up(): return False
-        errors = session.get_page_errors(page.page_id)
+    def is_blocked_in_china(self, page, session, classification):
         country = session.get_page_country_code(page.page_id)
-        if errors is None or country is None:
-            return None
-        if country == 'CN' and any([('Operation canceled' in e) for e in errors]):
+        if country is None or country != 'CN':
+            return None # None means we don't know if it's blocked or not
+        errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
+        if errors is None: return None
+        if all([('Operation canceled' in e) for e in errors]):
             return True
         return None
+
+    def is_page_blocked(self, page, session, classification):
+        if classification.is_up(): return False
+        return self.is_blocked_in_china(page, session, classification)
 
     def page_down_confidence(self, page, session):
         errors = session.get_page_errors(page.page_id)
@@ -552,11 +573,12 @@ class BlockpageSignatureClassifier(Classifier):
         # These are the countries for which we identify blocking by looking for certain
         # fingerprint in the HTTP response body.
         self.body_fingerprints = [
-                re.escape('iframe src="http://10.10'),                                           # IR
-                re.escape('iframe src="http://www.anonymous.com.bh/"'),                          # BH
-                re.escape('iframe src="http://196.29.164.27/ntc/ntcblock.html'),                 # SD
-                re.escape('iframe src="http://block.om/'),                                       # OM
-                re.escape("src='http://128.204.240.1"),                                          # SA
+                'iframe [^>]* src=["\']https?:\/\/10\.10',                                       # IR
+                'iframe [^>]* src=["\']https?:\/\/www\.anonymous\.com\.bh',                      # BH
+                'iframe [^>]* src=["\']https?:\/\/196\.29\.164\.27\/ntc\/ntcblock\.html',        # SD
+                'iframe [^>]* src=["\']https?:\/\/block\.om\/',                                  # OM
+                'iframe [^>]* src=["\']https?:\/\/128\.204\.240\.1',                             # SA
+                'iframe [^>]* src=["\']https?:\/\/www\.airtel\.in\/dot\/',                       # IN
                 re.escape('This web site has been blocked for violating regulations and laws of Kingdom of Bahrain.'),# BH
                 re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                # TR
                 re.escape('page should not be blocked please <a href="http://www.internet.gov.sa/'),# SA
@@ -574,7 +596,6 @@ class BlockpageSignatureClassifier(Classifier):
                 re.escape('14. pontja, illetve 36/G'),                                           # HU
                 re.escape('Your requested url has been blocked as per the directions received from Department of Telecommunications,Government of India.'), # IN
                 re.escape('Your requested URL has been blocked as per the directions received from Department of Telecommunications, Government of India.'), # IN
-                re.escape('iframe src="http://www.airtel.in/dot/'),                              # IN
 
 
                 # From ICLab https://github.com/iclab/iclab-dmp/blob/master/primitives/block_page_detection.py
@@ -757,10 +778,12 @@ class Session:
     def get_pages(self):
         if self.pages: return self.pages
         try:
+            if 'har' not in self: return []
             har_parser = HarParser(self['har'])
             self.pages = har_parser.pages
             return self.pages
         except Exception as e:
+            pprint.pprint(e)
             logging.warning('Saw exception when parsing HAR: {}'.format(e))
             return []
 
