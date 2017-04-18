@@ -458,7 +458,8 @@ class ErrorClassifier(Classifier):
         if country is None or country != 'CN':
             return None # None means we don't know if it's blocked or not
         errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
-        if errors is None or None in errors or len(errors) <= 1: return None
+        # All pages must have the error, and there must be more than one page.
+        if errors is None or None in errors or [] in errors or len(errors) <= 1: return None
         errors = [e[0] for e in errors]
         if all(['Operation canceled' in e for e in errors]):
             return True
@@ -469,6 +470,7 @@ class ErrorClassifier(Classifier):
         if country is None or country != 'KZ':
             return None # None means we don't know if it's blocked or not
         errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
+        # All pages must have the error, and there must be more than one page.
         if errors is None or None in errors or len(errors) <= 1: return None
         errors = [e[0] for e in errors]
         if all([('Operation canceled' in e) for e in errors]):
@@ -480,6 +482,7 @@ class ErrorClassifier(Classifier):
         if country is None or country != 'LB':
             return None
         errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
+        # All pages must have the error, and there must be more than one page.
         if errors is None or None in errors or len(errors) <= 1: return None
         errors = [e[0] for e in errors]
         if all([('Connection closed' in e) for e in errors]):
