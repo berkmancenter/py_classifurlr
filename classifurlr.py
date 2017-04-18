@@ -99,12 +99,11 @@ class InconclusiveFilter(Filter):
         errors = self.session.get_page_errors(page.page_id)
         if errors is None or len(errors) == 0:
             return False
-        return (
-            errors.startswith("(28, 'Resolving timed out") or
-            errors.startswith("(28, 'Operation timed out") or
-            errors.startswith("(28, 'Connection timed out") or
-            errors.startswith("(7, 'Failed to connect")
-            )
+        return any([
+                e.startswith("(28, 'Resolving timed out") or
+                e.startswith("(28, 'Operation timed out") or
+                e.startswith("(28, 'Connection timed out") or
+                e.startswith("(7, 'Failed to connect") for e in errors])
 
     def is_filtered_out(self, page):
         return self.is_captcha_challenge(page) or self.is_vpn_timeout(page)
@@ -458,15 +457,37 @@ class ErrorClassifier(Classifier):
         country = session.get_page_country_code(page.page_id)
         if country is None or country != 'CN':
             return None # None means we don't know if it's blocked or not
-        errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
-        if errors is None: return None
+        errors = [session.get_page_errors(p.page_id)[0] for p in session.get_pages()]
+        if errors is None or None in errors or len(errors) <= 1: return None
+        if all(['Operation canceled' in e for e in errors]):
+            return True
+        return None
+
+    def is_blocked_in_kazakhstan(self, page, session, classification):
+        country = session.get_page_country_code(page.page_id)
+        if country is None or country != 'KZ':
+            return None # None means we don't know if it's blocked or not
+        errors = [session.get_page_errors(p.page_id)[0] for p in session.get_pages()]
+        if errors is None or None in errors or len(errors) <= 1: return None
         if all([('Operation canceled' in e) for e in errors]):
+            return True
+        return None
+
+    def is_blocked_in_lebanon(self, page, session, classification):
+        country = session.get_page_country_code(page.page_id)
+        if country is None or country != 'LB':
+            return None
+        errors = [session.get_page_errors(p.page_id)[0] for p in session.get_pages()]
+        if errors is None or None in errors or len(errors) <= 1: return None
+        if all([('Connection closed' in e) for e in errors]):
             return True
         return None
 
     def is_page_blocked(self, page, session, classification):
         if classification.is_up(): return False
-        return self.is_blocked_in_china(page, session, classification)
+        return (self.is_blocked_in_china(page, session, classification) or
+                self.is_blocked_in_lebanon(page, session, classification) or
+                self.is_blocked_in_kazakhstan(page, session, classification))
 
     def page_down_confidence(self, page, session):
         errors = session.get_page_errors(page.page_id)
