@@ -28,6 +28,21 @@ def interpolate(domain, rang, x):
     # Clip to range
     return min([max([rang[0], x * slope + intercept]), rang[1]])
 
+def is_ip(url):
+    netloc = urllib.parse.urlparse(url).netloc
+    if ':' in netloc:
+        netloc = netloc.split(':')[0]
+    try:
+        ipaddress.ip_address(netloc)
+        return True
+    except ValueError:
+        return False
+
+def extract_domain(url):
+    if is_ip(url):
+        return urllib.parse.urlparse(url).netloc # IP and port
+    return tldextract.extract(url).registered_domain
+
 class NotEnoughDataError(LookupError):
     pass
 
@@ -605,17 +620,18 @@ class BlockpageSignatureClassifier(Classifier):
                 re.escape('that is considered illegal according to Belgian legislation'),        # BE
                 re.escape('This web site has been blocked for violating regulations and laws of Kingdom of Bahrain.'),# BH
                 'iframe [^>]* src=["\']https?:\/\/www\.anonymous\.com\.bh',                      # BH
-                re.escape('This web site has been blocked for violating regulations and laws of Kingdom of Bahrain.'),# BH
                 re.escape('nba.com.cy/Eas/eas.nsf/All/6F7F17A7790A55C8C2257B130055C86F'),        # CY
                 re.escape('lagt at blokere for adgang til siden.'),                              # DK
                 re.escape('xtpage = "page-blocage-terrorisme"'),                                 # FR
                 re.escape('www.gamingcommission.gov.gr/index.php/forbidden-access-black-list/'), # GR
                 re.escape('14. pontja, illetve 36/G'),                                           # HU
+                re.escape('access to this page is blocked due to Communication and Informatics Ministerial Decree Number 19/2014 regarding Internet Safe'), # ID
                 'iframe [^>]* src=["\']https?:\/\/www\.airtel\.in\/dot\/',                       # IN
                 re.escape('The page you have requested has been blocked'),                       # IN
                 re.escape('Your requested url has been blocked as per the directions received from Department of Telecommunications,Government of India.'), # IN
                 re.escape('Your requested URL has been blocked as per the directions received from Department of Telecommunications, Government of India.'), # IN
                 'iframe [^>]* src=["\']https?:\/\/10\.10',                                       # IR
+                re.escape('http://peyvandha.ir'),                                                # IR
                 re.escape('GdF Stop Page'),                                                      # IT
                 re.escape('http://warning.or.kr'),                                               # KR
                 re.escape('<meta name="kcsc" content="blocking" />'),                            # KR
@@ -627,8 +643,11 @@ class BlockpageSignatureClassifier(Classifier):
                 'iframe [^>]* src=["\']https?:\/\/128\.204\.240\.1',                             # SA
                 re.escape('page should not be blocked please <a href="http://www.internet.gov.sa/'),# SA
                 'iframe [^>]* src=["\']https?:\/\/196\.29\.164\.27\/ntc\/ntcblock\.html',        # SD
+                re.escape('it contravenes the Broadcasting (Class Licence) Notification issued by the Info-communications Media Development Authority'),# SG
+                re.escape('access is restricted by the Media Development Authority'),            # SG
                 re.escape('iframe src="http://103.208.24.21'),                                   # TH
                 re.escape('ถูกระงับโดยกระทรวงดิจิทัลเพื่อเศรษฐกิจและสังคม'),                              # TH
+                re.escape('could have an affect on or be against the security of the Kingdom, public order or good morals.'), # TH
                 re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                # TR
                 re.escape('This domain name has been seized by ICE - Homeland Security Investigations'),# US
 
@@ -649,8 +668,11 @@ class BlockpageSignatureClassifier(Classifier):
                 ('Location', re.escape('http://www.vodafone.qa/alu.cfm')),         # QA
                 ('Location', re.escape('http://warning.rt.ru')),                   # RU
                 ('Location', re.escape('https://www.atlex.ru/block.html')),        # RU
+                ('Location', re.escape('http://block.acs-group.net.ru/block/?')),  # RU
+                ('Location', 'http:\/\/blackhole\.beeline\.ru\/.*'),               # RU
                 ('Server', 'Protected by WireFilter'),                             # SA
                 ('Location', re.escape('http://196.1.211.6:8080/alert/')),         # SD
+                ('Location', re.escape('http://www.starhub.com/mda-blocked/01.html')),# SG
                 ('Location', re.escape('http://blocked.nb.sky.com')),              # UK
                 ('Via', re.escape('1.1 C1102')),                                   # UZ
                 ]
@@ -665,6 +687,16 @@ class BlockpageSignatureClassifier(Classifier):
                 for fprint in self.header_fingerprints:
                     if (header['name'] == fprint[0] and
                             re.search(fprint[1], header['value'])):
+                        blocked_domain = extract_domain(entry['request']['url'])
+                        tested_domain = session.get_domain()
+                        if blocked_domain != tested_domain:
+                            logging.warning('{} - Saw different domain blocked! - '
+                                    'Tested domain: {} - Blocked domain: {} - '
+                                    'Header Pattern: "{}" - Header: "{}" - '
+                                    'Value: "{}"'.format(self.slug(), tested_domain,
+                                        blocked_domain, fprint[1], header['name'],
+                                        header['value']))
+                            continue
                         logging.debug('{} - Page: {} - Header Pattern: "{}" - '
                                 'Header: "{}" - Value: "{}"'.format(self.slug(),
                                     page.page_id, fprint[1], header['name'],
@@ -743,19 +775,14 @@ class DifferingDomainClassifier(Classifier):
                     a.zfill(self.pad_domain_to), b.zfill(self.pad_domain_to)).ratio()
             return min(1.0, (1 - ratio) * self.multiplier)
 
-    def extract_domain(self, url):
-        if self.is_ip(url):
-            return urllib.parse.urlparse(url).netloc # IP and port
-        return tldextract.extract(url).registered_domain
-
     def requested_domain(self, page):
-        return self.extract_domain(page.entries[0]['request']['url'])
+        return extract_domain(page.entries[0]['request']['url'])
 
     def final_domain(self, page):
         if page.actual_page is None:
             raise NotEnoughDataError('No final page found')
         try:
-            return self.extract_domain(page.actual_page['request']['url'])
+            return extract_domain(page.actual_page['request']['url'])
         except KeyError as e:
             raise NotEnoughDataError('Could not find request URL for '
                     'URL "{}"'.format(page.url)) from e
@@ -797,6 +824,9 @@ class Session:
 
     def get_url(self):
         return self.url
+
+    def get_domain(self):
+        return extract_domain(self.get_url())
 
     def get_baseline_id(self):
         if 'baseline' not in self: return None
