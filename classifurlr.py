@@ -507,10 +507,55 @@ class ErrorClassifier(Classifier):
             return True
         return None
 
+    def is_blocked_in_turkey(self, page, session, classification):
+        asn = session.get_page_asn(page.page_id)
+        country = session.get_page_country_code(page.page_id)
+        if not (country == 'TR' and asn == 197328):
+            return None
+        errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
+        # More than one page must have the error.
+        if errors is None or len(errors) <= 1:
+            return None
+        errors = [e[0] for e in errors if e[0] == "(56, 'Recv failure: Connection reset by peer')"]
+        if len(errors) > 1:
+            return True
+        return None
+
+    def is_blocked_in_iran(self, page, session, classification):
+        asn = session.get_page_asn(page.page_id)
+        country = session.get_page_country_code(page.page_id)
+        if not (country == 'IR' and asn == 48434):
+            return None
+        errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
+        # More than one page must have the error.
+        if errors is None or len(errors) <= 1:
+            return None
+        errors = [e[0] for e in errors if e[0] == "(56, 'Recv failure: Connection reset by peer')"]
+        if len(errors) > 1:
+            return True
+        return None
+
+    def is_blocked_in_indonesia(self, page, session, classification):
+        asn = session.get_page_asn(page.page_id)
+        country = session.get_page_country_code(page.page_id)
+        if not (country == 'ID' and asn in [55699, 23700]):
+            return None
+        errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
+        # More than one page must have the error.
+        if errors is None or len(errors) <= 1:
+            return None
+        errors = [e[0] for e in errors if e[0] == "(52, 'Empty reply from server')"]
+        if len(errors) > 1:
+            return True
+        return None
+
     def is_page_blocked(self, page, session, classification):
         if classification.is_up(): return False
         return (self.is_blocked_in_china(page, session, classification) or
                 self.is_blocked_in_lebanon(page, session, classification) or
+                self.is_blocked_in_turkey(page, session, classification) or
+                self.is_blocked_in_indonesia(page, session, classification) or
+                self.is_blocked_in_iran(page, session, classification) or
                 self.is_blocked_in_kazakhstan(page, session, classification))
 
     def page_down_confidence(self, page, session):
@@ -867,7 +912,13 @@ class Session:
         details = self.get_page_details(page_id)
         if 'countryCode' not in details:
             return None
-        return details['countryCode']
+        return details['countryCode'].upper()
+
+    def get_page_asn(self, page_id):
+        details = self.get_page_details(page_id)
+        if 'asn' not in details:
+            return None
+        return details['asn']
 
 def run(session):
     filters = [
