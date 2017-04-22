@@ -513,7 +513,7 @@ class ErrorClassifier(Classifier):
         if not (country == 'TR' and asn == 197328):
             return None
         errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
-        # More than one page must have the error.
+        # More than one page must have the error. We have enough data for this.
         if errors is None or len(errors) <= 1:
             return None
         errors = [e[0] for e in errors if e[0] == "(56, 'Recv failure: Connection reset by peer')"]
@@ -527,11 +527,11 @@ class ErrorClassifier(Classifier):
         if not (country == 'IR' and asn == 48434):
             return None
         errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
-        # More than one page must have the error.
-        if errors is None or len(errors) <= 1:
+        # Only need to see this error once. Not great, but we don't have enough data otherwise.
+        if errors is None or len(errors) == 0:
             return None
         errors = [e[0] for e in errors if e[0] == "(56, 'Recv failure: Connection reset by peer')"]
-        if len(errors) > 1:
+        if len(errors) > 0:
             return True
         return None
 
@@ -541,11 +541,11 @@ class ErrorClassifier(Classifier):
         if not (country == 'ID' and asn in [55699, 23700]):
             return None
         errors = [session.get_page_errors(p.page_id) for p in session.get_pages()]
-        # More than one page must have the error.
-        if errors is None or len(errors) <= 1:
+        # Only need to see this error once. Not great, but we don't have enough data otherwise.
+        if errors is None or len(errors) == 0:
             return None
         errors = [e[0] for e in errors if e[0] == "(52, 'Empty reply from server')"]
-        if len(errors) > 1:
+        if len(errors) > 0:
             return True
         return None
 
