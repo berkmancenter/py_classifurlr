@@ -1,4 +1,4 @@
-import classifurlr, theme_status
+import classifurlr, classifurlr.theme_status
 import json
 
 def app(environ, start_response):
@@ -18,7 +18,7 @@ def app(environ, start_response):
         status = '201 Created'
         headers = [('Content-Type', 'application/json')]
         start_response(status, headers)
-        c = theme_status.run(theme, country, statuses)
+        c = classifurlr.theme_status.run(theme, country, statuses)
         return [c.as_json().encode('utf-8')]
     else:
         status = '404 Not Found'
