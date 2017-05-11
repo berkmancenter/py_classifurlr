@@ -1,3 +1,5 @@
+import logging
+
 class Filter:
     def __init__(self):
         self.name = '__placeholder__'
@@ -16,6 +18,9 @@ class Filter:
             else:
                 keep.append(page)
         return (keep, toss)
+
+    def is_filtered_out(self, page):
+        raise NotImplementedError('must implement #is_filtered_out')
 
 class InconclusiveFilter(Filter):
     def __init__(self):

@@ -2,6 +2,8 @@ import json, logging, concurrent.futures, base64
 
 import dateutil.parser
 from haralyzer import HarParser
+from bs4 import BeautifulSoup
+from classifurlr.url_utils import extract_domain
 
 class NotEnoughDataError(LookupError):
     pass
@@ -293,21 +295,6 @@ class ClassifyPipeline(Classifier):
             percent_down = down_count / total_count
         return percent_down
 
-    def page_statuses(self, session, pages):
-        statuses = {}
-        for page in pages:
-            try:
-                if self.is_page_down(page):
-                    statuses[page.page_id] = Classification.DOWN
-                else:
-                    statuses[page.page_id] = Classification.UP
-            except NotEnoughDataError as e:
-                # Don't include pages if the classifier doesn't know anything.
-                statuses[page.page_id] = e
-                logging.info(e)
-                continue
-        return statuses
-
     @staticmethod
     def normalize(weights):
         if min(weights) <= 0: raise ValueError('No weight can be zero or negative')
@@ -353,7 +340,7 @@ class Session:
         return self['baseline']
 
     def get_baseline(self):
-        if self.baseline: return baseline
+        if self.baseline: return self.baseline
         for page in self.get_pages():
             if page.page_id == self.get_baseline_id():
                 self.baseline = page

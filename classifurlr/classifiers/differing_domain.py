@@ -1,4 +1,4 @@
-import logging
+import logging, difflib, ipaddress, urllib.parse
 
 from classifurlr.classification import Classifier, NotEnoughDataError
 from classifurlr.url_utils import extract_domain

@@ -1,6 +1,7 @@
 import re, logging
 
 from classifurlr.classification import Classifier
+from classifurlr.url_utils import extract_domain
 
 class BlockpageSignatureClassifier(Classifier):
     def __init__(self):

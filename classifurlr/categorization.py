@@ -1,14 +1,15 @@
 import json, logging, urllib.parse, urllib.request, csv
 
+CORE_ENDPOINT = 'https://core.thenetmonitor.org/'
+CATEGORY_CSV = 'categories.csv'
+CATEGORY_CSV_URL = 'https://raw.githubusercontent.com/berkmancenter/url-lists/master/category_codes.csv'
+
 class Categorization:
-    CORE_ENDPOINT = 'https://core.thenetmonitor.org/'
-    CATEGORY_CSV = 'categories.csv'
-    CATEGORY_CSV_URL = 'https://raw.githubusercontent.com/berkmancenter/url-lists/master/category_codes.csv'
     @classmethod
     def get_url_category(cls, url, country=None):
         # Rather not make this a network call, but the logic is pretty
         # complicated given multi-country lists (like global).
-        endpoint = cls.CORE_ENDPOINT + 'urls/categorize'
+        endpoint = CORE_ENDPOINT + 'urls/categorize'
         data = { 'url': url }
         if country is not None:
             data['country'] = country
@@ -26,7 +27,7 @@ class Categorization:
 
     @classmethod
     def get_urls_categories(cls, urls, country=None):
-        endpoint = cls.CORE_ENDPOINT + 'urls/categorize'
+        endpoint = CORE_ENDPOINT + 'urls/categorize'
         data = { 'url[]': urls }
         if country is not None:
             data['country'] = country
@@ -66,15 +67,15 @@ class Categorization:
     @classmethod
     def _dl_categories_file(cls):
         logging.info('Downloading categories file')
-        with urllib.request.urlopen(cls.CATEGORY_CSV_URL) as u, open(cls.CATEGORY_CSV, 'w') as f:
+        with urllib.request.urlopen(CATEGORY_CSV_URL) as u, open(CATEGORY_CSV, 'w') as f:
             data = u.read().decode('utf-8')
             f.write(data)
-    
+
     @classmethod
     def _get_categories_csv(cls):
         try:
-            category_csv_file = open(cls.CATEGORY_CSV, 'r')
+            category_csv_file = open(CATEGORY_CSV, 'r')
         except FileNotFoundError as e:
             cls._dl_categories_file()
-            category_csv_file = open(cls.CATEGORY_CSV, 'r')
+            category_csv_file = open(CATEGORY_CSV, 'r')
         return category_csv_file

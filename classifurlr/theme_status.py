@@ -1,7 +1,8 @@
 import sqlite3, csv, argparse, json, urllib.parse, sys, urllib.request
 import logging
-from .categorization import Categorization
 from pprint import pprint
+
+from classifurlr.categorization import Categorization, CATEGORY_CSV
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Determine whether a content theme is inaccessible')
@@ -179,7 +180,6 @@ if __name__ == '__main__':
     args = parse_args()
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
-    c = ThemeInCountryStatus(args.theme, args.country,
-            json.load(args.statuses), args.category_csv)
+    c = ThemeInCountryStatus(args.theme, args.country, json.load(args.statuses))
     c.classify()
     print(c.as_json())
