@@ -2,6 +2,7 @@ import logging
 
 from classifurlr.classification import ClassifierWithBaseline, NotEnoughDataError
 from classifurlr.classifiers.similarity_metrics import similarity_metrics
+from classifurlr.har_utils import har_entry_response_content
 
 class CosineSimilarityClassifier(ClassifierWithBaseline):
     def __init__(self):
@@ -15,9 +16,9 @@ class CosineSimilarityClassifier(ClassifierWithBaseline):
 
     def page_down_confidence(self, page, session):
         baseline = self.get_baseline(session)
-        baseline_content = self.har_entry_response_content(baseline.actual_page)
+        baseline_content = har_entry_response_content(baseline.actual_page)
         try:
-            this_content = self.har_entry_response_content(page.actual_page)
+            this_content = har_entry_response_content(page.actual_page)
         except NotEnoughDataError as e:
             raise NotEnoughDataError('Could not locate page '
                     'content for URL "{}"'.format(page.url)) from e

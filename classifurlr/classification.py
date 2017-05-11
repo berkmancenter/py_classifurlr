@@ -1,8 +1,7 @@
-import json, logging, concurrent.futures, base64
+import json, logging, concurrent.futures
 
 import dateutil.parser
 from haralyzer import HarParser
-from bs4 import BeautifulSoup
 from classifurlr.url_utils import extract_domain
 
 class NotEnoughDataError(LookupError):
@@ -37,23 +36,6 @@ class Classifier:
         if self.is_page_blocked(page, session, classification):
             classification.mark_blocked()
         return classification
-
-    @staticmethod
-    def har_entry_response_content(entry):
-        try:
-            content = entry['response']['content']
-        except Exception:
-            raise NotEnoughDataError('Could not parse entry content')
-        if 'text' not in content:
-            raise NotEnoughDataError('"text" field not found in entry content')
-        text = content['text']
-        if 'encoding' in content and content['encoding'] == 'base64':
-            text = base64.b64decode(text)
-        # BeautifulSoup takes care of the document encoding for us.
-        try:
-            return str(BeautifulSoup(text, 'lxml'))
-        except Exception as e:
-            raise NotEnoughDataError('Could not parse entry content')
 
 class ClassifierWithBaseline(Classifier):
     def get_baseline(self, session):

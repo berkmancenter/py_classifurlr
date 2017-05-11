@@ -1,4 +1,6 @@
-import logging
+import logging, re
+
+from classifurlr.har_utils import har_entry_response_content
 
 class Filter:
     def __init__(self):
@@ -55,7 +57,18 @@ class InconclusiveFilter(Filter):
         pass
 
     def is_seized_domain(self, page):
-        pass
+        body_patterns = [
+                re.escape('This domain name has been seized by ICE - Homeland Security Investigations'),# US
+                ]
+        body = har_entry_response_content(page.actual_page)
+        for pattern in body_patterns:
+            match = re.search(pattern, body)
+            if match is not None:
+                logging.debug('{} - Page: {} - Body Pattern: "{}" '
+                        '- Matched: "{}"'.format(self.slug(), page.page_id,
+                            pattern, match.group(0)))
+                return True
+        return False
 
     def is_vpn_timeout(self, page):
         errors = self.session.get_page_errors(page.page_id)

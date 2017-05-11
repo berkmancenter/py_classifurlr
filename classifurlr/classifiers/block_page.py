@@ -2,6 +2,7 @@ import re, logging
 
 from classifurlr.classification import Classifier
 from classifurlr.url_utils import extract_domain
+from classifurlr.har_utils import har_entry_response_content
 
 class BlockpageSignatureClassifier(Classifier):
     def __init__(self):
@@ -52,7 +53,6 @@ class BlockpageSignatureClassifier(Classifier):
                 re.escape('ถูกระงับโดยกระทรวงดิจิทัลเพื่อเศรษฐกิจและสังคม'),                              # TH
                 re.escape('could have an affect on or be against the security of the Kingdom, public order or good morals.'), # TH
                 re.escape('<title>Telekomünikasyon İletişim Başkanlığı</title>'),                # TR
-                re.escape('This domain name has been seized by ICE - Homeland Security Investigations'),# US
 
 
                 # From ICLab https://github.com/iclab/iclab-dmp/blob/master/primitives/block_page_detection.py
@@ -106,7 +106,7 @@ class BlockpageSignatureClassifier(Classifier):
                                     header['value']))
                         return 1.0
 
-        body = self.har_entry_response_content(page.actual_page)
+        body = har_entry_response_content(page.actual_page)
         for fprint in self.body_fingerprints:
             match = re.search(fprint, body)
             if match is not None:
