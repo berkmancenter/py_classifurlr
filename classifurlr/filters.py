@@ -1,6 +1,7 @@
 import logging, re
 
 from classifurlr.har_utils import har_entry_response_content
+from classifurlr.classification import NotEnoughDataError
 
 class Filter:
     def __init__(self):
@@ -60,7 +61,10 @@ class InconclusiveFilter(Filter):
         body_patterns = [
                 re.escape('This domain name has been seized by ICE - Homeland Security Investigations'),# US
                 ]
-        body = har_entry_response_content(page.actual_page)
+        try:
+            body = har_entry_response_content(page.actual_page)
+        except NotEnoughDataError:
+            return False
         for pattern in body_patterns:
             match = re.search(pattern, body)
             if match is not None:
