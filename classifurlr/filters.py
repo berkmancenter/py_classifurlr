@@ -82,7 +82,8 @@ class InconclusiveFilter(Filter):
                 e.startswith("(28, 'Resolving timed out") or
                 e.startswith("(28, 'Operation timed out") or
                 e.startswith("(28, 'Connection timed out") or
-                e.startswith("(7, 'Failed to connect") for e in errors])
+                e.startswith("(7, 'Failed to connect") for e in errors if
+                e is not None])
 
     def is_filtered_out(self, page):
         return (

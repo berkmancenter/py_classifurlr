@@ -17,7 +17,7 @@ class ErrorClassifier(Classifier):
         if errors is None or None in errors or [] in errors or len(errors) <= 1:
             return None
         errors = [e[0] for e in errors]
-        if all(['Operation canceled' in e for e in errors]):
+        if all([e is not None and 'Operation canceled' in e for e in errors]):
             return True
         return None
 
@@ -30,7 +30,7 @@ class ErrorClassifier(Classifier):
         if errors is None or None in errors or [] in errors or len(errors) <= 1:
             return None
         errors = [e[0] for e in errors]
-        if all([('Operation canceled' in e) for e in errors]):
+        if all([e is not None and ('Operation canceled' in e) for e in errors]):
             return True
         return None
 
@@ -43,7 +43,7 @@ class ErrorClassifier(Classifier):
         if errors is None or None in errors or [] in errors or len(errors) <= 1:
             return None
         errors = [e[0] for e in errors]
-        if all([('Connection closed' in e) for e in errors]):
+        if all([e is not None and ('Connection closed' in e) for e in errors]):
             return True
         return None
 
@@ -104,5 +104,4 @@ class ErrorClassifier(Classifier):
             raise NotEnoughDataError('No errors for page "{}"'.format(page.page_id))
         logging.debug("{} - Page: {} - Errors: {}".format(self.slug(), page.page_id,
             errors))
-        return 1.0 if len(errors) > 0 else 0.0
-
+        return 1.0 if len([e for e in errors if e is not None]) > 0 else 0.0
