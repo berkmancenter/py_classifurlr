@@ -1,6 +1,6 @@
 import logging
 
-from classifurlr.classification import Classifier, NotEnoughDataError
+from ..classification import Classifier, NotEnoughDataError
 
 class StatusCodeClassifier(Classifier):
     def __init__(self):

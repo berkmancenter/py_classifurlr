@@ -1,6 +1,6 @@
 import logging
 
-from classifurlr.classification import Classifier
+from ..classification import Classifier
 
 class ThrottleClassifier(Classifier):
     def __init__(self):

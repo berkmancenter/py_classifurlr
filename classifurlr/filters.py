@@ -1,7 +1,7 @@
 import logging, re
 
-from classifurlr.har_utils import har_entry_response_content
-from classifurlr.classification import NotEnoughDataError
+from .har_utils import har_entry_response_content
+from .classification import NotEnoughDataError
 
 class Filter:
     def __init__(self):

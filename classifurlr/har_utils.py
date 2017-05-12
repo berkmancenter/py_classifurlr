@@ -2,7 +2,7 @@ import base64
 
 from bs4 import BeautifulSoup
 
-from classifurlr.classification import NotEnoughDataError
+from .classification import NotEnoughDataError
 
 def har_entry_response_content(entry):
     try:

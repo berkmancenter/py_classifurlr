@@ -1,4 +1,4 @@
-from classifurlr.classification import Classifier
+from ..classification import Classifier
 
 class EmptyPageClassifier(Classifier):
     def __init__(self):

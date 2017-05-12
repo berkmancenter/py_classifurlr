@@ -1,7 +1,7 @@
 import logging, difflib, ipaddress, urllib.parse
 
-from classifurlr.classification import Classifier, NotEnoughDataError
-from classifurlr.url_utils import extract_domain
+from ..classification import Classifier, NotEnoughDataError
+from ..url_utils import extract_domain
 
 class DifferingDomainClassifier(Classifier):
     def __init__(self):

@@ -2,7 +2,7 @@ import sqlite3, csv, argparse, json, urllib.parse, sys, urllib.request
 import logging
 from pprint import pprint
 
-from classifurlr.categorization import Categorization, CATEGORY_CSV
+from .categorization import Categorization, CATEGORY_CSV
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Determine whether a content theme is inaccessible')

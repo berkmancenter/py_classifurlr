@@ -1,6 +1,6 @@
 import logging
 
-from classifurlr.classification import ClassifierWithBaseline, NotEnoughDataError
+from ..classification import ClassifierWithBaseline, NotEnoughDataError
 
 class PageLengthClassifier(ClassifierWithBaseline):
     def __init__(self):

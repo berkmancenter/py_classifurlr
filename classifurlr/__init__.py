@@ -1,7 +1,7 @@
-from classifurlr.filters import *
-from classifurlr.post_processors import *
-from classifurlr.classifiers import *
-from classifurlr.classification import ClassifyPipeline
+from .filters import *
+from .post_processors import *
+from .classifiers import *
+from .classification import ClassifyPipeline
 
 # Expose the default pipeline config
 def run(session):

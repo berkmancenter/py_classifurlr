@@ -1,8 +1,8 @@
 import logging
 
-from classifurlr.classification import ClassifierWithBaseline, NotEnoughDataError
-from classifurlr.classifiers.similarity_metrics import similarity_metrics
-from classifurlr.har_utils import har_entry_response_content
+from ..classification import ClassifierWithBaseline, NotEnoughDataError
+from ..classifiers.similarity_metrics import similarity_metrics
+from ..har_utils import har_entry_response_content
 
 class CosineSimilarityClassifier(ClassifierWithBaseline):
     def __init__(self):

@@ -2,7 +2,7 @@ import json, logging, concurrent.futures
 
 import dateutil.parser
 from haralyzer import HarParser
-from classifurlr.url_utils import extract_domain
+from .url_utils import extract_domain
 
 class NotEnoughDataError(LookupError):
     pass

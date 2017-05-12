@@ -1,8 +1,8 @@
 import re, logging
 
-from classifurlr.classification import Classifier
-from classifurlr.url_utils import extract_domain
-from classifurlr.har_utils import har_entry_response_content
+from ..classification import Classifier
+from ..url_utils import extract_domain
+from ..har_utils import har_entry_response_content
 
 class BlockpageSignatureClassifier(Classifier):
     def __init__(self):
