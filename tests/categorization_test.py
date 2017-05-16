@@ -1,5 +1,5 @@
 import unittest
-from .categorization import Categorization
+from classifurlr.categorization import Categorization
 
 class CategorizationTest(unittest.TestCase):
     def test_get_url_category(self):

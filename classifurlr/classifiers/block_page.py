@@ -85,18 +85,20 @@ class BlockpageSignatureClassifier(Classifier):
         return None
 
     def page_down_confidence(self, page, session):
+        requested_domain = session.get_domain()
+        final_domain = extract_domain(page.actual_page['request']['url'])
+
         for entry in page.entries:
             for header in entry['response']['headers']:
                 for fprint in self.header_fingerprints:
                     if (header['name'] == fprint[0] and
                             re.search(fprint[1], header['value'])):
                         blocked_domain = extract_domain(entry['request']['url'])
-                        tested_domain = session.get_domain()
-                        if blocked_domain != tested_domain:
+                        if blocked_domain not in [requested_domain, final_domain]:
                             logging.warning('{} - Saw different domain blocked! - '
-                                    'Tested domain: {} - Blocked domain: {} - '
+                                    'Requested domain: {} - Blocked domain: {} - '
                                     'Header Pattern: "{}" - Header: "{}" - '
-                                    'Value: "{}"'.format(self.slug(), tested_domain,
+                                    'Value: "{}"'.format(self.slug(), requested_domain,
                                         blocked_domain, fprint[1], header['name'],
                                         header['value']))
                             continue
