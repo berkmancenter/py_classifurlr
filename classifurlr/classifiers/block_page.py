@@ -87,7 +87,9 @@ class BlockpageSignatureClassifier(Classifier):
     def page_down_confidence(self, page, session):
         requested_domain = session.get_domain()
         final_domain = None
-        if page.actual_page and page.actual_page['request'] and page.actual_page['url']:
+        if (page.actual_page and
+                page.actual_page['request'] and
+                page.actual_page['request']['url']):
             final_domain = extract_domain(page.actual_page['request']['url'])
 
         for entry in page.entries:
