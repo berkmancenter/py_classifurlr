@@ -24,24 +24,24 @@ class BlockpageSignatureClassifier(Classifier):
 'https?:\/\/www\.anonymous\.com\.bh',                                                      # BH
 'https?:\/\/nba\.com\.cy\/Eas\/eas\.nsf\/All\/6F7F17A7790A55C8C2257B130055C86F',           # CY
 'https?:\/\/www\.gamingcommission\.gov\.gr\/index\.php\/forbidden\-access\-black\-list\/', # GR
-'https?:\/\/internet-positif\.org',                                                        # ID
+'https?:\/\/internet\-positif\.org',                                                        # ID
 'https?:\/\/www\.airtel\.in\/dot\/',                                                       # IN
 'https?:\/\/10\.10',                                                                       # IR
 'https?:\/\/peyvandha\.ir',                                                                # IR
 'https?:\/\/warning\.or\.kr',                                                              # KR
-'https?:\/\/block-no\.altibox\.net\/',                                                     # NO
+'https?:\/\/block\-no\.altibox\.net\/',                                                     # NO
 'https?:\/\/block\.om\/',                                                                  # OM
 'https?:\/\/mobilegen\.vodafone\.pt\/denied\/dn',                                          # PT
 'https?:\/\/www\.vodafone\.qa\/alu\.cfm',                                                  # QA
 'https?:\/\/eais\.rkn\.gov\.ru\/',                                                         # RU
 'https?:\/\/warning\.rt\.ru',                                                              # RU
 'https?:\/\/www\.atlex\.ru\/block\.html',                                                  # RU
-'https?:\/\/block\.acs-group\.net\.ru\/block\/',                                           # RU
+'https?:\/\/block\.acs\-group\.net\.ru\/block\/',                                           # RU
 'https?:\/\/blackhole\.beeline\.ru\/.*',                                                   # RU
 'https?:\/\/128\.204\.240\.1',                                                             # SA
 'https?:\/\/196\.29\.164\.27\/ntc\/ntcblock\.html',                                        # SD
 'https?:\/\/196\.1\.211\.6:8080\/alert\/',                                                 # SD
-'https?:\/\/www\.starhub\.com\/mda-blocked\/01\.html',                                     # SG
+'https?:\/\/www\.starhub\.com\/mda\-blocked\/01\.html',                                     # SG
 'https?:\/\/103\.208\.24\.21',                                                             # TH
 'https?:\/\/blocked\.nb\.sky\.com',                                                        # UK
 
@@ -186,17 +186,22 @@ re.escape("The url has been blocked"),
         # iframes). Otherwise, this could give us a false positive in the case
         # of embedded content being blocked. This situation occurs with
         # header-only data.
-        no_bodies = all([har_entry_response_content(e) is None for e in page.entries])
-        if not no_bodies:
+        entry_contents = []
+        for e in page.entries:
+            try:
+                entry_contents.append(har_entry_response_content(e))
+            except NotEnoughDataError:
+                entry_contents.append(None)
+        if not all([content is None for content in entry_contents]):
             return False
 
         for e in page.entries:
             for url in self.url_patterns:
-                match = re.search(e['request']['url'], url)
+                match = re.search(url, e['request']['url'])
                 if match is not None:
-                    logging.debug('{} - Page: {} - Body Pattern: "{}" '
+                    logging.debug('{} - Page: {} - Pattern: "{}" '
                             '- Matched: "{}"'.format(self.slug(), page.page_id,
-                                fprint, match.group(0)))
+                                url, match.group(0)))
                     return True
         return False
 
