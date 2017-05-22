@@ -1,9 +1,14 @@
 import base64
 
 from bs4 import BeautifulSoup
+from cachetools import cached, LRUCache
 
 from .classification import NotEnoughDataError
 
+def entry_to_key(entry):
+    return (entry['request']['url'], entry['startedDateTime'], entry['pageref'])
+
+@cached(cache=LRUCache(maxsize=32), key=entry_to_key)
 def har_entry_response_content(entry):
     try:
         content = entry['response']['content']
@@ -19,4 +24,3 @@ def har_entry_response_content(entry):
         return str(BeautifulSoup(text, 'lxml'))
     except Exception as e:
         raise NotEnoughDataError('Could not parse entry content')
-

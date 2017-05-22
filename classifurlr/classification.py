@@ -102,6 +102,13 @@ class Classification:
     def is_blocked(self):
         return self.blocked
 
+    def get_constituents(self):
+        return self.constituents
+
+    def get_constituent_from(self, classifier):
+        return next((c for c in self.get_constituents()
+            if isinstance(c.classifier, classifier)), None)
+
     def as_dict(self):
         d = {
                 'subject': self.subject_id(),

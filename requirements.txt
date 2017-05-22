@@ -4,3 +4,4 @@ numpy
 tldextract
 lxml
 python-dateutil
+cachetools
