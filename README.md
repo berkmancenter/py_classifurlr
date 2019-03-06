@@ -117,7 +117,7 @@ Code Repository
 ---------------
 
 Code is hosted on GitHub at
-[https://github.com/berkmancenter/classifurlr](https://github.com/berkmancenter/classifurlr)
+[https://github.com/berkmancenter/py_classifurlr](https://github.com/berkmancenter/py_classifurlr)
 
 
 Tested Configurations
@@ -130,7 +130,7 @@ Running Tests
 
 Classifurlr comes with a really minimal test suite. To run it, just run:
 ```
-python classifurlr_test.py
+python tests/classifurlr_test.py
 ```
 
 Issue Tracker
@@ -146,7 +146,7 @@ jdcc
 License
 -------
 
-Copyright © 2017 President and Fellows of Harvard College
+Copyright © 2019 President and Fellows of Harvard College
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
