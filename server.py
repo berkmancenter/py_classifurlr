@@ -1,7 +1,7 @@
 import classifurlr, classifurlr.theme_status
 import json
 
-def app(environ, start_response):
+def application(environ, start_response):
     path = environ['PATH_INFO'].strip(' /').lower()
     if path == 'url':
         session = json.loads(environ['wsgi.input'].read().decode('utf-8'))
