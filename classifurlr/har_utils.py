@@ -26,6 +26,9 @@ def har_entry_response_content(entry):
     except Exception as e:
         raise NotEnoughDataError('Could not parse entry content')
 
+# Using the size property of the content instead of the bodySize
+# as the latter gets wrong values sometimes for some websites.
+# See https://bugs.chromium.org/p/chromium/issues/detail?id=379130
 def get_total_size(entries):
   size = 0
   for entry in entries:
