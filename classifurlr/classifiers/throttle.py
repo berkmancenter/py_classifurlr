@@ -1,6 +1,7 @@
 import logging
 
 from ..classification import Classifier
+from ..har_utils import get_total_size
 
 class ThrottleClassifier(Classifier):
     def __init__(self):
@@ -12,7 +13,7 @@ class ThrottleClassifier(Classifier):
         self.bandwidth_threshold = 50 # kbps
 
     def page_down_confidence(self, page, session):
-        bites = page.get_total_size(page.entries)
+        bites = get_total_size(page.entries)
         kilobits = bites * 8 / 1000.0
         mss = page.get_load_time()
         seconds = mss / 1000.0
