@@ -25,3 +25,10 @@ def har_entry_response_content(entry):
         return str(BeautifulSoup(text, 'lxml'))
     except Exception as e:
         raise NotEnoughDataError('Could not parse entry content')
+
+def get_total_size(entries):
+  size = 0
+  for entry in entries:
+    if entry['response']['content']['size'] > 0:
+      size += entry['response']['content']['size']
+  return size
